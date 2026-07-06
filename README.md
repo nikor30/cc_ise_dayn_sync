@@ -33,11 +33,11 @@ All state (SQLite DB + encryption key) lives in the `./data` volume (`/data` in 
 
 > **Podman / quadlet:** the compose file is a single service with one volume and one port —
 > `podman-compose up -d` works as-is, or generate a quadlet from the same image
-> (`podman run -d --name ise-ndg-sync -p 8080:8080 -v ./data:/data ise-ndg-sync:latest`).
+> (`podman run -d --name ise-ndg-sync -p 8090:8090 -v ./data:/data ise-ndg-sync:latest`).
 
 ### TLS / reverse proxy (important)
 
-The container serves plain HTTP on port 8080 (GUI **and** webhook on the same port).
+The container serves plain HTTP on port 8090 (GUI **and** webhook on the same port).
 Catalyst Center webhooks must target **HTTPS**, so put the container behind a TLS
 reverse proxy — e.g. Nginx Proxy Manager, Traefik or Caddy:
 
