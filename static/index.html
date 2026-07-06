@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ise-ndg-sync</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🔄</text></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>ise-ndg-sync</h1>
+  <span class="sub">Catalyst Center → ISE Network Device Group Sync</span>
+  <span id="conn-badges"></span>
+</header>
+<nav id="tabs">
+  <button data-tab="dashboard" class="active">Dashboard</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="rules">Mapping Rules</button>
+  <button data-tab="sitemap">Site Mappings</button>
+  <button data-tab="ndg">NDGs</button>
+  <button data-tab="reconcile">Reconciliation</button>
+  <button data-tab="audit">Audit Log</button>
+</nav>
+<main>
+
+<section id="tab-dashboard" class="tab active">
+  <div class="tiles" id="dash-tiles"></div>
+  <h3>Last reconciliation</h3>
+  <div id="dash-reconcile" class="card">–</div>
+</section>
+
+<section id="tab-settings" class="tab">
+  <div class="cols">
+    <div class="card">
+      <h3>Catalyst Center</h3>
+      <label>Base URL <input id="s-cc.base_url" placeholder="https://catalystcenter.example.com"></label>
+      <label>Username <input id="s-cc.username"></label>
+      <label>Password <input id="s-cc.password" type="password"></label>
+      <label class="chk"><input id="s-cc.verify_tls" type="checkbox"> Verify TLS certificate</label>
+      <button onclick="testConn('cc')">Test connection</button>
+      <span id="test-cc" class="testresult"></span>
+    </div>
+    <div class="card">
+      <h3>Cisco ISE</h3>
+      <label>Base URL / host <input id="s-ise.base_url" placeholder="https://ise.example.com"></label>
+      <label>API flavor
+        <select id="s-ise.api_flavor">
+          <option value="ers">ERS (default, port 9060)</option>
+          <option value="openapi">OpenAPI (ISE 3.1+, port 443)</option>
+        </select>
+      </label>
+      <label>ERS port <input id="s-ise.ers_port" type="number" placeholder="9060"></label>
+      <label>Username <input id="s-ise.username"></label>
+      <label>Password <input id="s-ise.password" type="password"></label>
+      <label class="chk"><input id="s-ise.verify_tls" type="checkbox"> Verify TLS certificate</label>
+      <button onclick="testConn('ise')">Test connection</button>
+      <span id="test-ise" class="testresult"></span>
+      <p class="hint">ERS must be enabled in ISE (Administration &gt; System &gt; Settings &gt; API
+      Settings) and the API user needs the <b>ERS Admin</b> role.</p>
+    </div>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Webhook</h3>
+      <label>Listen path <input id="s-webhook.path" placeholder="/webhook/catalystcenter"></label>
+      <label>Shared token (header <code>X-Auth-Token</code>) <input id="s-webhook.token" type="password"></label>
+      <label>Debounce seconds <input id="s-sync.debounce_seconds" type="number"></label>
+      <label>ISE lookup retry schedule (s) <input id="s-sync.retry_schedule" placeholder="30,60,120,300,900"></label>
+    </div>
+    <div class="card">
+      <h3>Jobs &amp; GUI</h3>
+      <label>NDG refresh interval (hours) <input id="s-ndg.refresh_hours" type="number"></label>
+      <label class="chk"><input id="s-reconcile.enabled" type="checkbox"> Reconciliation enabled</label>
+      <label>Reconciliation interval (minutes) <input id="s-reconcile.minutes" type="number"></label>
+      <label>GUI admin password (user <code>admin</code>, empty = no login) <input id="s-ui.admin_password" type="password"></label>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="primary" onclick="saveSettings()">Save settings</button>
+    <span id="save-result"></span>
+    <a class="btn" href="/api/export" download>Export config (JSON)</a>
+    <label class="btn">Import config <input type="file" id="import-file" hidden onchange="importConfig(this)"></label>
+  </div>
+  <p class="hint">Fields overridden by environment variables are read-only here.
+  Secrets are stored Fernet-encrypted in <code>/data/app.db</code>.</p>
+</section>
+
+<section id="tab-rules" class="tab">
+  <div class="actions">
+    <button class="primary" onclick="editRule(null)">+ New rule</button>
+    <span class="hint">First match wins (top → bottom). Empty criteria = wildcard; all criteria are AND-ed. Patterns are regex.</span>
+  </div>
+  <table id="rules-table">
+    <thead><tr><th></th><th>#</th><th>Description</th><th>Criteria</th><th>Device Type NDG</th><th>Location</th><th>On</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div id="rule-editor" class="card hidden"></div>
+  <div class="card">
+    <h3>Dry-run / Simulate</h3>
+    <div class="row">
+      <select id="dryrun-device"><option value="">— load CC inventory first —</option></select>
+      <button onclick="loadCcDevices()">Load CC inventory</button>
+      <input id="dryrun-manual" placeholder="…or hostname / IP">
+      <button class="primary" onclick="runDryRun()">Simulate</button>
+    </div>
+    <pre id="dryrun-result" class="result hidden"></pre>
+    <h4>Webhook payload test</h4>
+    <textarea id="webhook-test-body" rows="4" placeholder='Paste a sample Catalyst Center webhook JSON payload'></textarea>
+    <button onclick="testWebhookPayload()">Parse &amp; simulate payload</button>
+    <pre id="webhook-test-result" class="result hidden"></pre>
+  </div>
+</section>
+
+<section id="tab-sitemap" class="tab">
+  <p class="hint">Maps a Catalyst Center site hierarchy (regex, e.g. <code>^Global/DE/Schierling/.*</code>)
+  to an ISE Location NDG. Used by rules with location mode <i>derive from CC site</i>. First match wins.</p>
+  <table id="sitemap-table">
+    <thead><tr><th>Priority</th><th>CC site path pattern</th><th>ISE Location NDG</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="card row">
+    <input id="sm-priority" type="number" value="100" style="width:6em" title="Priority">
+    <input id="sm-pattern" placeholder="^Global/DE/Schierling/.*" style="flex:1">
+    <select id="sm-location" style="flex:1"></select>
+    <button class="primary" onclick="addSiteMap()">Add mapping</button>
+  </div>
+</section>
+
+<section id="tab-ndg" class="tab">
+  <div class="actions">
+    <button class="primary" onclick="refreshNdg()">Refresh from ISE</button>
+    <span id="ndg-status"></span>
+  </div>
+  <div class="cols">
+    <div class="card"><h3>Device Types</h3><ul id="ndg-devicetypes" class="ndglist"></ul></div>
+    <div class="card"><h3>Locations</h3><ul id="ndg-locations" class="ndglist"></ul></div>
+  </div>
+</section>
+
+<section id="tab-reconcile" class="tab">
+  <div class="actions">
+    <button class="primary" onclick="runReconcile()">Run now</button>
+    <span id="reconcile-status"></span>
+  </div>
+  <table id="reconcile-table">
+    <thead><tr><th>Started</th><th>Finished</th><th>Status</th><th>Scanned</th><th>Fixed</th>
+    <th>Unmatched (no rule)</th><th>Not in CC</th><th>Errors</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="tab-audit" class="tab">
+  <div class="actions row">
+    <select id="audit-status" onchange="loadAudit()">
+      <option value="">all statuses</option>
+      <option>success</option><option>failed</option><option>retrying</option>
+      <option>skipped</option><option>dry-run</option><option>info</option>
+    </select>
+    <select id="audit-trigger" onchange="loadAudit()">
+      <option value="">all triggers</option>
+      <option>webhook</option><option>reconcile</option><option>manual</option>
+      <option>dry-run</option><option>system</option>
+    </select>
+    <button onclick="loadAudit()">Reload</button>
+    <a class="btn" href="/api/audit.csv" download>Export CSV</a>
+    <span id="audit-count" class="hint"></span>
+  </div>
+  <table id="audit-table">
+    <thead><tr><th>Time</th><th>Trigger</th><th>Device</th><th>Rule</th>
+    <th>NDG change</th><th>Status</th><th>Message</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
