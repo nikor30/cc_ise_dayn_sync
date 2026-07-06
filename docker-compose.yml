@@ -1,0 +1,38 @@
+services:
+  ise-ndg-sync:
+    build: .
+    image: ise-ndg-sync:latest
+    container_name: ise-ndg-sync
+    restart: unless-stopped
+    ports:
+      - "8080:8080"          # GUI + webhook (put behind a TLS reverse proxy!)
+    volumes:
+      - data:/data            # SQLite DB, Fernet key — persist this
+      # For a host bind mount instead, pre-create the dir for the non-root user:
+      #   mkdir -p ./data && chown 1001:1001 ./data
+      # - ./data:/data
+    environment:
+      LOG_LEVEL: INFO
+      # Everything below is optional — the GUI persists settings in /data/app.db.
+      # Env vars override GUI values (12-factor style):
+      # CC_BASE_URL: https://catalystcenter.example.com
+      # CC_USERNAME: apiuser
+      # CC_PASSWORD: secret
+      # CC_VERIFY_TLS: "false"
+      # ISE_BASE_URL: https://ise.example.com
+      # ISE_ERS_PORT: "9060"
+      # ISE_USERNAME: ers-admin
+      # ISE_PASSWORD: secret
+      # ISE_VERIFY_TLS: "false"
+      # ISE_API_FLAVOR: ers            # or: openapi (ISE 3.1+)
+      # WEBHOOK_TOKEN: change-me
+      # WEBHOOK_PATH: /webhook/catalystcenter
+      # SYNC_DEBOUNCE_SECONDS: "60"
+      # SYNC_RETRY_SCHEDULE: 30,60,120,300,900
+      # NDG_REFRESH_HOURS: "6"
+      # RECONCILE_ENABLED: "true"
+      # RECONCILE_MINUTES: "30"
+      # UI_ADMIN_PASSWORD: change-me
+
+volumes:
+  data:
