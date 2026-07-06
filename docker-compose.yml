@@ -5,7 +5,7 @@ services:
     container_name: ise-ndg-sync
     restart: unless-stopped
     ports:
-      - "8080:8080"          # GUI + webhook (put behind a TLS reverse proxy!)
+      - "8090:8090"          # GUI + webhook (put behind a TLS reverse proxy!)
     volumes:
       - data:/data            # SQLite DB, Fernet key — persist this
       # For a host bind mount instead, pre-create the dir for the non-root user:
