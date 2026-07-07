@@ -20,8 +20,8 @@ def classify(name: str) -> str:
 
 async def refresh_ndg_cache() -> dict:
     """Pull all NDGs from ISE into the ndg_cache table. Returns counts."""
-    ise = ISEClient()
-    ndgs = await ise.list_ndgs()
+    async with ISEClient() as ise:
+        ndgs = await ise.list_ndgs()
     now = datetime.now(timezone.utc)
     with SessionLocal() as s:
         seen = set()

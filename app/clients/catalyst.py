@@ -11,6 +11,10 @@ import httpx
 from ..http_utils import make_client, request_with_retry
 from ..settings_store import get_setting, get_bool
 
+# The client keeps one pooled keep-alive connection per instance; reuse a
+# single instance for bulk work (`async with CatalystClient() as cc:`) so the
+# auth token and the tag list are fetched once, not per device.
+
 log = logging.getLogger(__name__)
 
 TOKEN_TTL = 50 * 60  # CC tokens live ~60 min; refresh after 50
@@ -30,14 +34,34 @@ class CatalystClient:
         self._token: str | None = None
         self._token_ts: float = 0.0
         self._tags_cache: list[dict] | None = None
+        self._client: httpx.AsyncClient | None = None
         if not self.base_url:
             raise CatalystError("Catalyst Center base URL is not configured")
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = make_client(self.verify_tls)
+        return self._client
+
+    async def aclose(self):
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.aclose()
 
     async def _get_token(self) -> str:
         if self._token and time.monotonic() - self._token_ts < TOKEN_TTL:
             return self._token
-        async with make_client(self.verify_tls, auth=(self.username, self.password)) as c:
-            resp = await request_with_retry(c, "POST", f"{self.base_url}/dna/system/api/v1/auth/token")
+        try:
+            resp = await request_with_retry(self._http(), "POST",
+                                            f"{self.base_url}/dna/system/api/v1/auth/token",
+                                            auth=(self.username, self.password))
+        except httpx.HTTPError as exc:
+            raise CatalystError(f"CC auth request failed: {exc.__class__.__name__}: {exc}") from exc
         if resp.status_code != 200:
             raise CatalystError(f"CC auth failed: HTTP {resp.status_code}")
         token = resp.json().get("Token")
@@ -47,15 +71,17 @@ class CatalystClient:
         return token
 
     async def _get(self, path: str, params: dict | None = None) -> dict | list:
-        token = await self._get_token()
-        headers = {"X-Auth-Token": token, "Accept": "application/json"}
-        async with make_client(self.verify_tls, headers=headers) as c:
-            resp = await request_with_retry(c, "GET", f"{self.base_url}{path}", params=params)
-        if resp.status_code == 401:  # token expired early -> refresh once
-            self._token = None
-            headers["X-Auth-Token"] = await self._get_token()
-            async with make_client(self.verify_tls, headers=headers) as c:
-                resp = await request_with_retry(c, "GET", f"{self.base_url}{path}", params=params)
+        headers = {"X-Auth-Token": await self._get_token(), "Accept": "application/json"}
+        try:
+            resp = await request_with_retry(self._http(), "GET", f"{self.base_url}{path}",
+                                            params=params, headers=headers)
+            if resp.status_code == 401:  # token expired early -> refresh once
+                self._token = None
+                headers["X-Auth-Token"] = await self._get_token()
+                resp = await request_with_retry(self._http(), "GET", f"{self.base_url}{path}",
+                                                params=params, headers=headers)
+        except httpx.HTTPError as exc:
+            raise CatalystError(f"CC request failed: {exc.__class__.__name__}: {exc}") from exc
         if resp.status_code == 404:
             return {}
         if resp.status_code >= 400:
@@ -101,16 +127,27 @@ class CatalystClient:
         return self._norm_device(dev) if dev else None
 
     async def find_device(self, hostname: str = "", ip: str = "") -> dict | None:
-        params = {}
+        """Find a device by management IP or hostname. ISE stores the short name
+        while CC inventory usually holds the FQDN (or vice versa), so try the
+        exact name, then a wildcard prefix match on the short name."""
+        candidates = []
         if ip:
-            params["managementIpAddress"] = ip
-        elif hostname:
-            params["hostname"] = hostname
-        else:
-            return None
-        data = await self._get("/dna/intent/api/v1/network-device", params=params)
-        devs = (data or {}).get("response") or []
-        return self._norm_device(devs[0]) if devs else None
+            candidates.append({"managementIpAddress": ip})
+        if hostname:
+            candidates.append({"hostname": hostname})
+            short = hostname.split(".")[0]
+            if short and short.lower() != hostname.lower():
+                candidates.append({"hostname": short})
+            candidates.append({"hostname": f"{short or hostname}.*"})  # CC accepts regex here
+        for params in candidates:
+            try:
+                data = await self._get("/dna/intent/api/v1/network-device", params=params)
+            except CatalystError:
+                continue
+            devs = (data or {}).get("response") or []
+            if devs:
+                return self._norm_device(devs[0])
+        return None
 
     async def list_devices(self, limit: int = 500) -> list[dict]:
         out, offset = [], 1

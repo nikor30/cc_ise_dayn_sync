@@ -28,6 +28,20 @@ def test_hostname_regex_matches():
     assert not rules.rule_matches(make_rule(match_hostname=r"^SW-MUC-.*"), DEVICE)
 
 
+def test_matching_is_case_insensitive():
+    # a lowercase pattern must match an uppercase CC hostname (real-world case:
+    # rule "ssto146*" vs hostname "SSTO146CIS.Global.web-int.net")
+    dev = {**DEVICE, "hostname": "SSTO146CIS.Global.web-int.net"}
+    assert rules.rule_matches(make_rule(match_hostname=r"ssto146.*"), dev)
+    assert rules.rule_matches(make_rule(match_site=r"^global/de/"), DEVICE)
+    assert rules.rule_matches(make_rule(match_tag="ACCESS"), DEVICE)
+    assert rules.site_to_location(
+        "GLOBAL/DE/SCHIERLING/B1",
+        [SiteMapping(priority=10, site_pattern=r"^global/de/schierling",
+                     location_ndg="Location#All Locations#DE#Schierling")]) \
+        == "Location#All Locations#DE#Schierling"
+
+
 def test_empty_criteria_are_wildcards():
     assert rules.rule_matches(make_rule(), DEVICE)
 

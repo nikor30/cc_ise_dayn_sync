@@ -73,6 +73,12 @@
       <label>NDG refresh interval (hours) <input id="s-ndg.refresh_hours" type="number"></label>
       <label class="chk"><input id="s-reconcile.enabled" type="checkbox"> Reconciliation enabled</label>
       <label>Reconciliation interval (minutes) <input id="s-reconcile.minutes" type="number"></label>
+      <label class="chk"><input id="s-reconcile.mode" type="checkbox">
+        Require manual approval of reconciliation changes (queued on the Reconciliation page)</label>
+      <label>Device re-check interval (hours) — compliant ISE devices are cached and skipped
+        <input id="s-reconcile.detail_ttl_hours" type="number"></label>
+      <label>Exclude ISE devices (regex on name/IP, one per line)
+        <textarea id="s-reconcile.exclude" rows="3" placeholder="^lab-.*&#10;^10\.99\..*"></textarea></label>
       <label>GUI admin password (user <code>admin</code>, empty = no login) <input id="s-ui.admin_password" type="password"></label>
     </div>
   </div>
@@ -143,9 +149,20 @@
     <button class="primary" onclick="runReconcile()">Run now</button>
     <span id="reconcile-status"></span>
   </div>
+  <div id="pending-card" class="card hidden">
+    <h3>Pending changes (waiting for approval)</h3>
+    <div class="actions">
+      <button class="primary" onclick="approveAllPending()">Approve all</button>
+      <span id="pending-count" class="hint"></span>
+    </div>
+    <table id="pending-table">
+      <thead><tr><th>Queued</th><th>Device</th><th>Rule</th><th>NDG change</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
   <table id="reconcile-table">
     <thead><tr><th>Started</th><th>Finished</th><th>Status</th><th>Scanned</th><th>Fixed</th>
-    <th>Unmatched (no rule)</th><th>Not in CC</th><th>Errors</th></tr></thead>
+    <th>Pending</th><th>Unmatched (no rule)</th><th>Not in CC</th><th>Excluded</th><th>Errors</th></tr></thead>
     <tbody></tbody>
   </table>
 </section>

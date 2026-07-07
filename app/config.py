@@ -37,6 +37,9 @@ DEFAULTS = {
     # Reconciliation
     "reconcile.enabled": "true",
     "reconcile.minutes": "30",
+    "reconcile.mode": "auto",  # "auto" = apply immediately | "approve" = queue for manual approval
+    "reconcile.exclude": "",   # regex patterns (one per line) matched against ISE device name/IP
+    "reconcile.detail_ttl_hours": "24",  # skip re-fetching compliant devices for this long
     # Optional GUI login (empty = auth disabled)
     "ui.admin_password": "",
 }
@@ -62,6 +65,9 @@ ENV_MAP = {
     "NDG_REFRESH_HOURS": "ndg.refresh_hours",
     "RECONCILE_ENABLED": "reconcile.enabled",
     "RECONCILE_MINUTES": "reconcile.minutes",
+    "RECONCILE_MODE": "reconcile.mode",
+    "RECONCILE_EXCLUDE": "reconcile.exclude",
+    "RECONCILE_DETAIL_TTL_HOURS": "reconcile.detail_ttl_hours",
     "UI_ADMIN_PASSWORD": "ui.admin_password",
 }
 

@@ -78,14 +78,12 @@ async def apply_to_ise(ise: ISEClient, ise_device: dict, targets: dict) -> tuple
     return old_ndgs, new_ndgs
 
 
-async def process_device_event(ref: dict, trigger: str = "webhook", raw=None,
-                               ise_device: dict | None = None) -> dict:
-    """Full pipeline for one device. `ref` = {id|hostname|ip}.
-    `ise_device` can be pre-supplied (reconciliation) to skip the lookup/retry."""
+async def process_device_event(ref: dict, trigger: str = "webhook", raw=None) -> dict:
+    """Full pipeline for one device. `ref` = {id|hostname|ip}."""
     label = ref.get("hostname") or ref.get("ip") or ref.get("id") or "?"
     try:
-        cc = CatalystClient()
-        device = await enrich_from_cc(cc, ref)
+        async with CatalystClient() as cc:
+            device = await enrich_from_cc(cc, ref)
     except CatalystError as exc:
         audit.record(trigger, "failed", device_name=label, message=f"Catalyst Center error: {exc}", raw=raw)
         return {"status": "failed", "message": str(exc)}
@@ -112,14 +110,13 @@ async def process_device_event(ref: dict, trigger: str = "webhook", raw=None,
     audit_id = audit.record(trigger, "retrying", device_name=name, device_ip=ip,
                             rule=rule_label, message="processing", raw=raw)
     try:
-        ise = ISEClient()
-        if ise_device is None:
+        async with ISEClient() as ise:
             ise_device = await find_in_ise_with_retry(ise, name, ip, audit_id)
-        if ise_device is None:
-            audit.update_status(audit_id, "failed",
-                                "device never appeared in ISE within the retry window")
-            return {"status": "failed", "message": "device not found in ISE"}
-        old_ndgs, new_ndgs = await apply_to_ise(ise, ise_device, targets)
+            if ise_device is None:
+                audit.update_status(audit_id, "failed",
+                                    "device never appeared in ISE within the retry window")
+                return {"status": "failed", "message": "device not found in ISE"}
+            old_ndgs, new_ndgs = await apply_to_ise(ise, ise_device, targets)
     except ISEError as exc:
         audit.update_status(audit_id, "failed", f"ISE error: {exc}")
         return {"status": "failed", "message": str(exc)}
@@ -149,17 +146,17 @@ def _set_old(audit_id: int, old_ndgs: list):
 
 async def dry_run(ref: dict) -> dict:
     """Simulate: which rule matches and what would be written — no writes."""
-    cc = CatalystClient()
-    device = await enrich_from_cc(cc, ref)
+    async with CatalystClient() as cc:
+        device = await enrich_from_cc(cc, ref)
     if device is None:
         return {"status": "failed", "message": "device not found in Catalyst Center"}
     plan = plan_for_device(device)
     result = {"status": "dry-run", **plan}
     if plan["matched"]:
         try:
-            ise = ISEClient()
-            ise_dev = await ise.find_device(name=device.get("hostname", ""),
-                                            ip=device.get("ip", ""))
+            async with ISEClient() as ise:
+                ise_dev = await ise.find_device(name=device.get("hostname", ""),
+                                                ip=device.get("ip", ""))
             if ise_dev:
                 old = list(ise_dev.get("NetworkDeviceGroupList") or [])
                 result["ise_current_ndgs"] = old

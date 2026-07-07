@@ -54,6 +54,11 @@ headers are required; the webhook is authenticated with a shared token.
 
 ### Cisco ISE
 
+Tested against ISE 3.1, 3.2 (3.2.0.542) and 3.4 (3.4.0.608). Note: some ISE
+builds answer with a malformed HTTP header (`Unauthorized User: : 401`) when
+they throttle ERS requests — the client retries these and keeps one pooled
+connection per run so large scans neither trip the throttle nor abort.
+
 1. **Enable ERS:** *Administration → System → Settings → API Settings →
    ERS (Read/Write) = Enabled*.
 2. **API user:** create an admin user with the **ERS Admin** role
@@ -100,6 +105,24 @@ The **Reconciliation** page shows the periodic safety-net job (default every 30 
 it scans ISE for devices still on `Device Type#All Device Types` or
 `Location#All Locations` and re-applies the rules. "Run now" triggers it manually.
 
+Reconciliation controls (Settings → Jobs):
+
+- **Manual approval mode** — when enabled, reconciliation never writes to ISE
+  directly; proposed changes are queued on the Reconciliation page where you
+  approve or reject them per device (or "Approve all"). Recommended for the
+  first runs to avoid unwanted mass changes.
+- **Device re-check interval** — compliant devices are cached locally
+  (`ise_device_cache`) and skipped for this many hours (default 24), so a run
+  over thousands of devices only fetches details for new, changed or
+  non-compliant devices instead of taking minutes every time.
+- **Exclusions** — regex patterns (one per line, case-insensitive, matched
+  against the ISE device name and IP) for devices reconciliation must never
+  touch.
+
+All rule/site matching is **case-insensitive** (CC and ISE often disagree on
+hostname casing), and device lookups try the FQDN, the short hostname and the
+management IP in both directions.
+
 ---
 
 ## How updates are written to ISE
@@ -141,6 +164,9 @@ and show as read-only in the GUI.
 | `NDG_REFRESH_HOURS` | `6` | NDG cache refresh interval |
 | `RECONCILE_ENABLED` | `true` | Enable the reconciliation job |
 | `RECONCILE_MINUTES` | `30` | Reconciliation interval |
+| `RECONCILE_MODE` | `auto` | `auto` = apply immediately, `approve` = queue for manual approval |
+| `RECONCILE_EXCLUDE` | – | Regex per line, ISE devices to skip (name/IP, case-insensitive) |
+| `RECONCILE_DETAIL_TTL_HOURS` | `24` | How long compliant devices are skipped via the local cache |
 | `UI_ADMIN_PASSWORD` | – | Enables GUI login (user `admin`); empty = open |
 | `LOG_LEVEL` | `INFO` | stdout log level |
 | `PORT` | `8080` | Listen port |
