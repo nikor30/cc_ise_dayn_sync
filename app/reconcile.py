@@ -52,7 +52,8 @@ def _first_ip(ise_device: dict) -> str:
     return (ips[0] or {}).get("ipaddress", "") if ips else ""
 
 
-def _update_cache(ise_id: str, name: str, ip: str, ndgs: list, now: datetime):
+def _update_cache(ise_id: str, name: str, ip: str, ndgs: list, now: datetime,
+                  compliant: bool = False):
     with SessionLocal() as s:
         row = s.get(ISEDeviceCache, ise_id)
         if row is None:
@@ -61,9 +62,29 @@ def _update_cache(ise_id: str, name: str, ip: str, ndgs: list, now: datetime):
         row.name, row.ip = name, ip
         row.ndgs = json.dumps(ndgs)
         row.has_default = is_default_ndgs(ndgs)
+        row.compliant = compliant
         row.last_detail = now
         row.last_seen = now
         s.commit()
+
+
+def _set_compliant(ise_id: str, value: bool = True):
+    with SessionLocal() as s:
+        row = s.get(ISEDeviceCache, ise_id)
+        if row is not None:
+            row.compliant = value
+            s.commit()
+
+
+def invalidate_cache():
+    """Force re-evaluation of every device on the next run — called whenever
+    rules, site mappings or the reconciliation scope change."""
+    with SessionLocal() as s:
+        s.query(ISEDeviceCache).update({ISEDeviceCache.last_detail: None,
+                                        ISEDeviceCache.compliant: False},
+                                       synchronize_session=False)
+        s.commit()
+    log.info("ISE device cache invalidated (rules/scope changed)")
 
 
 def _queue_pending(ise_id: str, name: str, ip: str, rule_label: str,
@@ -102,6 +123,7 @@ async def run_reconciliation() -> dict:
 
         status, message = "done", ""
         approve = get_setting("reconcile.mode").strip().lower() == "approve"
+        scope_all = get_setting("reconcile.scope").strip().lower() == "all"
         ttl = timedelta(hours=max(0, get_int("reconcile.detail_ttl_hours", 24)))
         excludes = _compile_excludes()
         blacklisted = blacklist.load()
@@ -112,7 +134,7 @@ async def run_reconciliation() -> dict:
                 summaries = await ise.list_devices()
                 now = datetime.now(timezone.utc)
                 with SessionLocal() as s:
-                    cache = {r.ise_id: (r.has_default, r.last_detail)
+                    cache = {r.ise_id: (r.compliant, r.last_detail)
                              for r in s.query(ISEDeviceCache).all()}
                 seen_ids = set()
                 for summary in summaries:
@@ -125,11 +147,11 @@ async def run_reconciliation() -> dict:
                         continue
                     cached = cache.get(dev_id)
                     if cached is not None:
-                        has_default, last_detail = cached
+                        compliant, last_detail = cached
                         if last_detail is not None and last_detail.tzinfo is None:
                             last_detail = last_detail.replace(tzinfo=timezone.utc)
-                        if not has_default and last_detail and now - last_detail < ttl:
-                            continue  # compliant recently — skip the detail GET
+                        if compliant and last_detail and now - last_detail < ttl:
+                            continue  # no action needed recently — skip the detail GET
                     try:
                         full = await ise.get_device(dev_id)
                         if not full:
@@ -137,11 +159,14 @@ async def run_reconciliation() -> dict:
                         ndgs = list(full.get("NetworkDeviceGroupList") or [])
                         ip = _first_ip(full)
                         _update_cache(dev_id, full.get("name", dev_name), ip, ndgs, now)
-                        if not is_default_ndgs(ndgs):
+                        if not scope_all and not is_default_ndgs(ndgs):
+                            # defaults scope: device already has non-default NDGs
+                            _set_compliant(dev_id)
                             continue
                         if _excluded(excludes, ip) or blacklist.matches(
                                 blacklisted, full.get("name", ""), ip):
                             note("excluded", dev_name)
+                            _set_compliant(dev_id)  # excluded = never act on it
                             continue
                         if cc is None:
                             cc = CatalystClient()
@@ -149,19 +174,23 @@ async def run_reconciliation() -> dict:
                             cc, {"hostname": full.get("name", ""), "ip": ip})
                         if device is None:
                             note("not_found_in_cc", dev_name)
+                            _set_compliant(dev_id)  # nothing we can do until rules/CC change
                             continue
                         plan = plan_for_device(device)
                         if not plan["matched"]:
                             note("unmatched", dev_name)
+                            _set_compliant(dev_id)
                             continue
                         targets = plan["targets"]
                         if not targets.get("device_type") and not targets.get("location"):
                             note("unmatched", dev_name)
+                            _set_compliant(dev_id)
                             continue
                         new_ndgs = merge_ndgs(ndgs, targets.get("device_type"),
                                               targets.get("location"))
                         if sorted(new_ndgs) == sorted(ndgs):
-                            continue  # rule matched but nothing would change
+                            _set_compliant(dev_id)  # already exactly what the rule wants
+                            continue
                         rule_label = f"#{plan['rule']['id']} {plan['rule']['description']}".strip()
                         if approve:
                             _queue_pending(dev_id, full.get("name", dev_name), ip,
@@ -169,7 +198,8 @@ async def run_reconciliation() -> dict:
                             note("pending", dev_name)
                         else:
                             old, new = await apply_to_ise(ise, full, targets)
-                            _update_cache(dev_id, full.get("name", dev_name), ip, new, now)
+                            _update_cache(dev_id, full.get("name", dev_name), ip, new, now,
+                                          compliant=True)
                             audit.record("reconcile", "success",
                                          device_name=full.get("name", dev_name),
                                          device_ip=ip, rule=rule_label,
@@ -253,7 +283,7 @@ async def apply_pending(pid: int) -> dict:
                 _resolve_pending(pid, "failed", "device no longer exists in ISE")
                 return {"status": "failed", "message": "device no longer exists in ISE"}
             old, new = await apply_to_ise(ise, full, targets)
-        _update_cache(ise_id, name, ip, new, datetime.now(timezone.utc))
+        _update_cache(ise_id, name, ip, new, datetime.now(timezone.utc), compliant=True)
         _resolve_pending(pid, "applied")
         audit.record("manual", "success", device_name=name, device_ip=ip,
                      rule=rule_label, old_ndgs=old, new_ndgs=new,

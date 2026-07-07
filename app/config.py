@@ -7,7 +7,7 @@ Resolution order for every setting (12-factor friendly):
 """
 import os
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DB_PATH = os.path.join(DATA_DIR, "app.db")
@@ -40,6 +40,7 @@ DEFAULTS = {
     "reconcile.enabled": "true",
     "reconcile.minutes": "30",
     "reconcile.mode": "auto",  # "auto" = apply immediately | "approve" = queue for manual approval
+    "reconcile.scope": "defaults",  # "defaults" = only devices on default NDGs | "all" = enforce rules on every device
     "reconcile.exclude": "",   # regex patterns (one per line) matched against ISE device name/IP
     "reconcile.detail_ttl_hours": "24",  # skip re-fetching compliant devices for this long
     # Optional GUI login (empty = auth disabled)
@@ -68,6 +69,7 @@ ENV_MAP = {
     "RECONCILE_ENABLED": "reconcile.enabled",
     "RECONCILE_MINUTES": "reconcile.minutes",
     "RECONCILE_MODE": "reconcile.mode",
+    "RECONCILE_SCOPE": "reconcile.scope",
     "RECONCILE_EXCLUDE": "reconcile.exclude",
     "RECONCILE_DETAIL_TTL_HOURS": "reconcile.detail_ttl_hours",
     "UI_ADMIN_PASSWORD": "ui.admin_password",

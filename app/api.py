@@ -114,6 +114,8 @@ async def put_settings(payload: dict):
     changed = save_settings(payload)
     if any(k.startswith(("ndg.", "reconcile.")) for k in changed):
         sched.configure_jobs()
+    if "reconcile.scope" in changed:
+        reconcile.invalidate_cache()  # compliance flags depend on the scope
     return {"changed": changed}
 
 
@@ -176,6 +178,7 @@ async def create_rule(payload: dict):
                               for f in RULE_FIELDS})
         s.add(rule)
         s.commit()
+        reconcile.invalidate_cache()
         return _rule_dict(rule)
 
 
@@ -189,6 +192,7 @@ async def update_rule(rule_id: int, payload: dict):
             if f in payload:
                 setattr(rule, f, payload[f])
         s.commit()
+        reconcile.invalidate_cache()
         return _rule_dict(rule)
 
 
@@ -200,6 +204,7 @@ async def delete_rule(rule_id: int):
             raise HTTPException(404, "rule not found")
         s.delete(rule)
         s.commit()
+    reconcile.invalidate_cache()
     return {"deleted": rule_id}
 
 
@@ -213,6 +218,7 @@ async def reorder_rules(payload: dict):
             if rule:
                 rule.priority = (idx + 1) * 10
         s.commit()
+    reconcile.invalidate_cache()
     return {"ok": True}
 
 
@@ -235,7 +241,8 @@ async def create_sitemap(payload: dict):
                           location_ndg=payload["location_ndg"])
         s.add(row)
         s.commit()
-        return {"id": row.id}
+    reconcile.invalidate_cache()
+    return {"id": row.id}
 
 
 @router.put("/api/sitemap/{map_id}")
@@ -248,6 +255,7 @@ async def update_sitemap(map_id: int, payload: dict):
             if f in payload:
                 setattr(row, f, payload[f])
         s.commit()
+    reconcile.invalidate_cache()
     return {"ok": True}
 
 
@@ -259,6 +267,7 @@ async def delete_sitemap(map_id: int):
             raise HTTPException(404, "mapping not found")
         s.delete(row)
         s.commit()
+    reconcile.invalidate_cache()
     return {"deleted": map_id}
 
 
@@ -452,5 +461,6 @@ async def import_config(payload: dict):
     if payload.get("settings"):
         imported["settings"] = len(save_settings(payload["settings"]))
         sched.configure_jobs()
+    reconcile.invalidate_cache()
     audit.record("manual", "info", message=f"configuration imported: {imported}")
     return imported

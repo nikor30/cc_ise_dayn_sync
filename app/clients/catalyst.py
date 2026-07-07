@@ -186,21 +186,29 @@ class CatalystClient:
 
     # ---- tags ---------------------------------------------------------------
     async def get_device_tags(self, device_id: str) -> list[str]:
-        """Tags assigned to the device, via GET /tag + GET /tag/{id}/member."""
+        """Tags assigned to the device, via GET /tag + GET /tag/{id}/member.
+        Tag list AND memberships are cached per client instance, so bulk runs
+        (reconciliation) pay the member lookups once, not per device."""
         if self._tags_cache is None:
             data = await self._get("/dna/intent/api/v1/tag", params={"limit": 500})
             self._tags_cache = (data or {}).get("response") or []
+        if not hasattr(self, "_tag_members"):
+            self._tag_members: dict[str, set] = {}
         names = []
         for tag in self._tags_cache:
             tag_id, tag_name = tag.get("id"), tag.get("name")
             if not tag_id or not tag_name:
                 continue
-            try:
-                data = await self._get(f"/dna/intent/api/v1/tag/{tag_id}/member",
-                                       params={"memberType": "networkdevice", "limit": 500})
-            except CatalystError:
-                continue
-            members = (data or {}).get("response") or []
-            if any((m.get("instanceUuid") or m.get("id")) == device_id for m in members):
+            if tag_id not in self._tag_members:
+                try:
+                    data = await self._get(f"/dna/intent/api/v1/tag/{tag_id}/member",
+                                           params={"memberType": "networkdevice",
+                                                   "limit": 500})
+                    members = (data or {}).get("response") or []
+                    self._tag_members[tag_id] = {
+                        m.get("instanceUuid") or m.get("id") for m in members}
+                except CatalystError:
+                    self._tag_members[tag_id] = set()
+            if device_id in self._tag_members[tag_id]:
                 names.append(tag_name)
         return names

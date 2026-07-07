@@ -75,6 +75,9 @@
       <label>Reconciliation interval (minutes) <input id="s-reconcile.minutes" type="number"></label>
       <label class="chk"><input id="s-reconcile.mode" type="checkbox">
         Require manual approval of reconciliation changes (queued on the Reconciliation page)</label>
+      <label class="chk"><input id="s-reconcile.scope" type="checkbox">
+        Enforce rules on ALL devices — not only devices still on the default NDGs
+        (also corrects devices whose NDGs differ from what their rule prescribes)</label>
       <label>Device re-check interval (hours) — compliant ISE devices are cached and skipped
         <input id="s-reconcile.detail_ttl_hours" type="number"></label>
       <label>Exclude ISE devices (regex on name/IP, one per line)

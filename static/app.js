@@ -58,7 +58,7 @@ const SETTING_IDS = ["cc.base_url","cc.username","cc.password","cc.verify_tls",
   "ise.base_url","ise.api_flavor","ise.ers_port","ise.username","ise.password","ise.verify_tls",
   "webhook.path","webhook.token","sync.debounce_seconds","sync.retry_schedule",
   "ndg.refresh_hours","reconcile.enabled","reconcile.minutes","reconcile.mode",
-  "reconcile.detail_ttl_hours","reconcile.exclude","ui.admin_password"];
+  "reconcile.scope","reconcile.detail_ttl_hours","reconcile.exclude","ui.admin_password"];
 
 async function loadSettings() {
   const s = await api("/api/settings");
@@ -66,6 +66,7 @@ async function loadSettings() {
     const el = document.getElementById(`s-${key}`);
     if (!el || !s[key]) continue;
     if (key === "reconcile.mode") el.checked = s[key].value === "approve";
+    else if (key === "reconcile.scope") el.checked = s[key].value === "all";
     else if (el.type === "checkbox") el.checked = /^(1|true|yes|on)$/i.test(s[key].value);
     else el.value = s[key].value;
     el.disabled = s[key].env_override;
@@ -79,6 +80,7 @@ async function saveSettings() {
     const el = document.getElementById(`s-${key}`);
     if (!el || el.disabled) continue;
     if (key === "reconcile.mode") payload[key] = el.checked ? "approve" : "auto";
+    else if (key === "reconcile.scope") payload[key] = el.checked ? "all" : "defaults";
     else payload[key] = el.type === "checkbox" ? String(el.checked) : el.value;
   }
   try {
