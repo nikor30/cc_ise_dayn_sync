@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .config import LOG_LEVEL
+from .config import LOG_LEVEL, APP_VERSION
 from .db import init_db
 from .api import router
 from . import scheduler
@@ -28,12 +28,12 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 async def lifespan(app: FastAPI):
     init_db()
     scheduler.start()
-    log.info("ise-ndg-sync started")
+    log.info("ise-ndg-sync %s started", APP_VERSION)
     yield
     scheduler.scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="ise-ndg-sync", lifespan=lifespan)
+app = FastAPI(title="ise-ndg-sync", version=APP_VERSION, lifespan=lifespan)
 
 
 @app.middleware("http")
