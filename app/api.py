@@ -37,6 +37,7 @@ async def _check(coro) -> bool:
 
 @router.get("/healthz")
 async def healthz():
+    from .config import APP_VERSION
     now = time.monotonic()
     if _health_cache["data"] is None or now - _health_cache["ts"] > 60:
         cc_ok = ise_ok = False
@@ -52,7 +53,8 @@ async def healthz():
                     ise_ok = await _check(ise.list_ndgs())
             except ISEError:
                 ise_ok = False
-        _health_cache.update(ts=now, data={"status": "ok", "cc_reachable": cc_ok,
+        _health_cache.update(ts=now, data={"status": "ok", "version": APP_VERSION,
+                                           "cc_reachable": cc_ok,
                                            "ise_reachable": ise_ok})
     return _health_cache["data"]
 

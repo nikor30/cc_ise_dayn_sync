@@ -399,5 +399,8 @@ async function loadAudit() {
 /* ------------------------------------------------ boot */
 const loaders = {dashboard: loadDashboard, settings: loadSettings, rules: loadRules,
   sitemap: loadSiteMap, ndg: loadNdg, reconcile: loadReconcile, audit: loadAudit};
+api("/healthz").then((h) => {
+  if (h.version) $("#app-version").textContent = `v${h.version}`;
+}).catch(() => {});
 loadDashboard();
 setInterval(() => { if ($("#tab-dashboard").classList.contains("active")) loadDashboard(); }, 30000);
