@@ -34,6 +34,9 @@ _NEW_COLUMNS = {
         "excluded": "INTEGER NOT NULL DEFAULT 0",
         "details": "TEXT NOT NULL DEFAULT ''",
     },
+    "ise_device_cache": {
+        "compliant": "BOOLEAN NOT NULL DEFAULT 0",
+    },
 }
 
 

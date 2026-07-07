@@ -100,6 +100,8 @@ class ISEDeviceCache(Base):
     ip: Mapped[str] = mapped_column(String(64), default="")
     ndgs: Mapped[str] = mapped_column(Text, default="")  # JSON list
     has_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "no action needed as of last evaluation" — cleared whenever rules change
+    compliant: Mapped[bool] = mapped_column(Boolean, default=False)
     last_detail: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0 — 2026-07-07
+
+### Added
+- **Reconciliation scope** (`reconcile.scope`): new setting *"Enforce rules on
+  ALL devices"*. Until now reconciliation only touched devices still on the
+  default NDGs (`Device Type#All Device Types` / `Location#All Locations`) —
+  a device with non-default but *wrong* NDGs was considered "already
+  configured" and skipped, even though dry-run showed a rule would change it.
+  With scope = all, every device is checked against the rules and corrected
+  (or queued for approval) when its NDGs differ from what its rule prescribes.
+  Default remains "defaults only".
+
+### Changed
+- The device cache now tracks **rule compliance** instead of just
+  "has default NDGs": devices with no action needed (unmatched, not in CC,
+  excluded, already correct) are skipped until the re-check interval expires —
+  periodic runs no longer re-query Catalyst Center for the same unmatched
+  devices every 30 minutes.
+- **Any rule/site-mapping change (or scope change / config import) invalidates
+  the cache**, so the next run re-evaluates every device immediately — no
+  waiting for the re-check interval after editing rules.
+- Catalyst Center tag memberships are cached per run (one lookup per tag,
+  not per device).
+
 ## 1.3.0 — 2026-07-07
 
 ### Fixed

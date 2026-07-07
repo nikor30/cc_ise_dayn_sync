@@ -107,6 +107,12 @@ it scans ISE for devices still on `Device Type#All Device Types` or
 
 Reconciliation controls (Settings → Jobs):
 
+- **Scope** — by default reconciliation only touches devices still on the
+  default NDGs. Enable *"Enforce rules on ALL devices"* to also correct
+  devices whose NDGs exist but differ from what their matching rule
+  prescribes (what dry-run shows is then what reconciliation does).
+  Editing rules or site mappings resets the device cache, so the next run
+  re-evaluates everything immediately.
 - **Manual approval mode** — when enabled, reconciliation never writes to ISE
   directly; proposed changes are queued on the Reconciliation page where you
   approve or reject them per device (or "Approve all"). Recommended for the
@@ -169,6 +175,7 @@ and show as read-only in the GUI.
 | `RECONCILE_ENABLED` | `true` | Enable the reconciliation job |
 | `RECONCILE_MINUTES` | `30` | Reconciliation interval |
 | `RECONCILE_MODE` | `auto` | `auto` = apply immediately, `approve` = queue for manual approval |
+| `RECONCILE_SCOPE` | `defaults` | `defaults` = only devices on default NDGs, `all` = enforce rules on every device |
 | `RECONCILE_EXCLUDE` | – | Regex per line, ISE devices to skip (name/IP, case-insensitive) |
 | `RECONCILE_DETAIL_TTL_HOURS` | `24` | How long compliant devices are skipped via the local cache |
 | `UI_ADMIN_PASSWORD` | – | Enables GUI login (user `admin`); empty = open |
