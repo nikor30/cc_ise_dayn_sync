@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 — 2026-07-07
+
+### Added
+- **Per-device blacklist**: mark individual devices that must never be touched.
+  - Manage entries on the Reconciliation page (name and/or IP + note); name
+    matches FQDN and short hostname in both directions, IP matches exactly,
+    all case-insensitive.
+  - One-click **Blacklist** button on a pending change (rejects it and
+    blacklists the device in one step).
+  - Enforced in both the webhook pipeline (audit log shows
+    "device is blacklisted") and reconciliation (counted as "Excluded").
+  - API: `GET/POST /api/blacklist`, `DELETE /api/blacklist/{id}`,
+    `POST /api/pending/{id}/blacklist`.
+
 ## 1.1.0 — 2026-07-07
 
 Field-test feedback release (tested against ISE 3.2.0.542 / 3.4.0.608 and

@@ -103,6 +103,17 @@ class ISEDeviceCache(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BlacklistEntry(Base):
+    """Devices that must never be touched (webhook + reconciliation). Matched
+    case-insensitively: name against FQDN and short hostname, IP exactly."""
+    __tablename__ = "device_blacklist"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    note: Mapped[str] = mapped_column(String(255), default="")
+
+
 class PendingChange(Base):
     """Reconciliation change awaiting manual approval (reconcile.mode = approve)."""
     __tablename__ = "pending_changes"

@@ -118,6 +118,10 @@ Reconciliation controls (Settings → Jobs):
 - **Exclusions** — regex patterns (one per line, case-insensitive, matched
   against the ISE device name and IP) for devices reconciliation must never
   touch.
+- **Device blacklist** (Reconciliation page) — mark individual devices that
+  must never be modified by webhook or reconciliation. Add them by name/IP,
+  or click **Blacklist** directly on a pending change to reject it and ban
+  the device in one step.
 
 All rule/site matching is **case-insensitive** (CC and ISE often disagree on
 hostname casing), and device lookups try the FQDN, the short hostname and the

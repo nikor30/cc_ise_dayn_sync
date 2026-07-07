@@ -23,7 +23,7 @@ from .models import ReconcileRun, ISEDeviceCache, PendingChange
 from .rules import is_default_ndgs, merge_ndgs
 from .settings_store import get_setting, get_int
 from .sync import enrich_from_cc, plan_for_device, apply_to_ise
-from . import audit
+from . import audit, blacklist
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +94,7 @@ async def run_reconciliation() -> dict:
         approve = get_setting("reconcile.mode").strip().lower() == "approve"
         ttl = timedelta(hours=max(0, get_int("reconcile.detail_ttl_hours", 24)))
         excludes = _compile_excludes()
+        blacklisted = blacklist.load()
         first_error = ""
         cc: CatalystClient | None = None
         try:
@@ -109,7 +110,7 @@ async def run_reconciliation() -> dict:
                     dev_id, dev_name = summary.get("id", ""), summary.get("name", "")
                     if dev_id:
                         seen_ids.add(dev_id)
-                    if _excluded(excludes, dev_name):
+                    if _excluded(excludes, dev_name) or blacklist.matches(blacklisted, dev_name):
                         stats["excluded"] += 1
                         continue
                     cached = cache.get(dev_id)
@@ -128,7 +129,8 @@ async def run_reconciliation() -> dict:
                         _update_cache(dev_id, full.get("name", dev_name), ip, ndgs, now)
                         if not is_default_ndgs(ndgs):
                             continue
-                        if _excluded(excludes, ip):
+                        if _excluded(excludes, ip) or blacklist.matches(
+                                blacklisted, full.get("name", ""), ip):
                             stats["excluded"] += 1
                             continue
                         if cc is None:

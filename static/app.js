@@ -325,6 +325,7 @@ async function refreshNdg() {
 
 /* ------------------------------------------------ reconciliation */
 async function loadReconcile() {
+  loadBlacklist().catch(() => {});
   const d = await api("/api/reconcile");
   $("#reconcile-status").textContent = d.running ? "⏳ running…" : "";
   const pending = d.pending || [];
@@ -337,7 +338,9 @@ async function loadReconcile() {
       <td><div class="ndg-diff"><span class="ndg-old">${esc(p.old_ndgs.join(", "))}</span><br>
           <span class="ndg-new">${esc(p.new_ndgs.join(", "))}</span></div></td>
       <td><button class="primary" onclick="approvePending(${p.id})">Approve</button>
-          <button class="danger" onclick="rejectPending(${p.id})">Reject</button></td>
+          <button class="danger" onclick="rejectPending(${p.id})">Reject</button>
+          <button title="Reject and never touch this device again"
+            onclick="blacklistPending(${p.id}, '${esc(p.device_name)}')">Blacklist</button></td>
     </tr>`).join("");
   $("#reconcile-table tbody").innerHTML = d.runs.map((r) => `<tr>
       <td>${esc((r.started || "").replace("T", " ").slice(0, 19))}</td>
@@ -364,6 +367,36 @@ async function approveAllPending() {
   const r = await api("/api/pending/approve-all", {method: "POST"});
   alert(`Applied: ${r.applied}, failed: ${r.failed}`);
   loadReconcile();
+}
+
+async function blacklistPending(id, name) {
+  if (!confirm(`Blacklist ${name}? The device will never be modified again.`)) return;
+  await api(`/api/pending/${id}/blacklist`, {method: "POST"});
+  loadReconcile();
+}
+
+/* ------------------------------------------------ blacklist */
+async function loadBlacklist() {
+  const rows = await api("/api/blacklist");
+  $("#blacklist-table tbody").innerHTML = rows.map((b) => `<tr>
+      <td>${esc((b.created || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(b.name || "—")}</td><td>${esc(b.ip || "—")}</td><td>${esc(b.note)}</td>
+      <td><button class="danger" onclick="removeBlacklist(${b.id})">✕</button></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="hint">No blacklisted devices.</td></tr>`;
+}
+
+async function addBlacklist() {
+  const name = $("#bl-name").value.trim(), ip = $("#bl-ip").value.trim();
+  if (!name && !ip) { alert("Enter a device name or IP."); return; }
+  await api("/api/blacklist", {method: "POST",
+    body: {name, ip, note: $("#bl-note").value.trim()}});
+  $("#bl-name").value = $("#bl-ip").value = $("#bl-note").value = "";
+  loadBlacklist();
+}
+
+async function removeBlacklist(id) {
+  await api(`/api/blacklist/${id}`, {method: "DELETE"});
+  loadBlacklist();
 }
 
 async function runReconcile() {
