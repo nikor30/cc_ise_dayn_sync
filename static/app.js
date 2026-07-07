@@ -342,13 +342,21 @@ async function loadReconcile() {
           <button title="Reject and never touch this device again"
             onclick="blacklistPending(${p.id}, '${esc(p.device_name)}')">Blacklist</button></td>
     </tr>`).join("");
-  $("#reconcile-table tbody").innerHTML = d.runs.map((r) => `<tr>
+  const LABELS = {fixed: "Fixed", pending: "Pending", unmatched: "Unmatched (no rule)",
+                  not_found_in_cc: "Not found in CC", excluded: "Excluded", errors: "Errors"};
+  $("#reconcile-table tbody").innerHTML = d.runs.map((r) => {
+    const det = Object.entries(r.details || {})
+      .filter(([, v]) => v && v.length)
+      .map(([k, v]) => `<details class="raw"><summary>${esc(LABELS[k] || k)} (${v.length})</summary>
+          <div class="rule-crit">${esc(v.join(", "))}</div></details>`).join("");
+    return `<tr>
       <td>${esc((r.started || "").replace("T", " ").slice(0, 19))}</td>
       <td>${esc((r.finished || "").replace("T", " ").slice(0, 19))}</td>
-      <td class="status-${esc(r.status)}">${esc(r.status)}${r.message ? " — " + esc(r.message) : ""}</td>
+      <td class="status-${esc(r.status)}">${esc(r.status)}${r.message ? " — " + esc(r.message) : ""}${det}</td>
       <td>${r.scanned}</td><td>${r.fixed}</td><td>${r.pending ?? 0}</td><td>${r.unmatched}</td>
       <td>${r.not_found_in_cc}</td><td>${r.excluded ?? 0}</td><td>${r.errors}</td>
-    </tr>`).join("") || `<tr><td colspan="10" class="hint">No runs yet.</td></tr>`;
+    </tr>`;
+  }).join("") || `<tr><td colspan="10" class="hint">No runs yet.</td></tr>`;
 }
 
 async function approvePending(id) {

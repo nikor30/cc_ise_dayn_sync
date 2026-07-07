@@ -233,16 +233,31 @@ class ISEClient:
             return await self._find_ers(f"ipaddress.EQ.{ip}")
         return None
 
+    async def _put_device(self, device: dict):
+        if self.flavor == "openapi":
+            name = device.get("name") or device.get("id")
+            return await self._req("PUT", f"{self.openapi_base}/network-device/{name}",
+                                   json_body=device)
+        return await self._req("PUT", f"{self.ers_base}/config/networkdevice/{device['id']}",
+                               json_body={"NetworkDevice": device})
+
     async def update_device(self, device: dict) -> dict:
         """PUT the complete NetworkDevice object back (ERS requires all fields)."""
         device = {k: v for k, v in device.items() if k != "link"}
-        if self.flavor == "openapi":
-            name = device.get("name") or device.get("id")
-            resp = await self._req("PUT", f"{self.openapi_base}/network-device/{name}",
-                                   json_body=device)
-        else:
-            resp = await self._req("PUT", f"{self.ers_base}/config/networkdevice/{device['id']}",
-                                   json_body={"NetworkDevice": device})
+        resp = await self._put_device(device)
+        if resp.status_code == 400 and "coasourcehost" in resp.text.lower():
+            # ISE rejects its own stored TrustSec coaSourceHost when it points
+            # at a stale/renamed PSN ("must be a valid value of node type
+            # Standalone/PPAN/Policy with Session services"). Retry once with
+            # that single field removed so ISE falls back to its default —
+            # all other TrustSec settings stay untouched.
+            import copy
+            sanitized = copy.deepcopy(device)
+            sga = (sanitized.get("trustsecsettings") or {}).get("sgaNotificationAndUpdates") or {}
+            if sga.pop("coaSourceHost", None) is not None:
+                log.warning("ISE rejected stored TrustSec coaSourceHost on '%s'; "
+                            "retrying PUT without it", device.get("name"))
+                resp = await self._put_device(sanitized)
         if resp.status_code >= 400:
             raise ISEError(f"ISE PUT device '{device.get('name')}': "
                            f"HTTP {resp.status_code} {resp.text[:300]}")

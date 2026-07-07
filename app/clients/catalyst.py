@@ -139,6 +139,7 @@ class CatalystClient:
             if short and short.lower() != hostname.lower():
                 candidates.append({"hostname": short})
             candidates.append({"hostname": f"{short or hostname}.*"})  # CC accepts regex here
+            candidates.append({"hostname": f".*{short or hostname}.*"})
         for params in candidates:
             try:
                 data = await self._get("/dna/intent/api/v1/network-device", params=params)

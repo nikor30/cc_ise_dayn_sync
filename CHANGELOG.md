@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.0 — 2026-07-07
+
+### Fixed
+- **NDG refresh failed on every run after the first**
+  (`UPDATE statement on table 'ndg_cache' expected to update N row(s); 0 were
+  matched`): the stale-entry prune ran before the row updates were written and
+  deleted the entire cache mid-transaction. Pruning now happens after an
+  explicit flush and compares NDG names instead of timestamps; an empty answer
+  from ISE never wipes the cache.
+- **ISE TrustSec `coaSourceHost` PUT rejection** (HTTP 400 "must be a valid
+  value of node type Standalone/PPAN/Policy with Session services", seen on
+  ISE 3.4): when ISE rejects its own stored value, the PUT is retried once
+  with only that field removed so ISE falls back to its default. All other
+  TrustSec settings are preserved. This unblocks devices that could never be
+  updated.
+
+### Added
+- **Per-run device lists** on the Reconciliation page: each run row now has
+  expandable lists showing exactly WHICH devices were fixed / queued as
+  pending / unmatched (no rule) / not found in CC / excluded / errored — no
+  more guessing why a device wasn't updated.
+- One more Catalyst Center hostname-lookup fallback (`.*name.*` contains
+  match) for inventories where the ISE name is embedded in the CC FQDN.
+
 ## 1.2.0 — 2026-07-07
 
 ### Added

@@ -32,6 +32,7 @@ _NEW_COLUMNS = {
     "reconcile_runs": {
         "pending": "INTEGER NOT NULL DEFAULT 0",
         "excluded": "INTEGER NOT NULL DEFAULT 0",
+        "details": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
