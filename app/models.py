@@ -82,7 +82,39 @@ class ReconcileRun(Base):
     status: Mapped[str] = mapped_column(String(32), default="running")  # running|done|failed
     scanned: Mapped[int] = mapped_column(Integer, default=0)
     fixed: Mapped[int] = mapped_column(Integer, default=0)
+    pending: Mapped[int] = mapped_column(Integer, default=0)   # queued for manual approval
     unmatched: Mapped[int] = mapped_column(Integer, default=0)
     not_found_in_cc: Mapped[int] = mapped_column(Integer, default=0)
+    excluded: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(Text, default="")
+
+
+class ISEDeviceCache(Base):
+    """Local snapshot of ISE devices so reconciliation can skip re-fetching
+    devices that were compliant recently (see reconcile.detail_ttl_hours)."""
+    __tablename__ = "ise_device_cache"
+    ise_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    ndgs: Mapped[str] = mapped_column(Text, default="")  # JSON list
+    has_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_detail: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PendingChange(Base):
+    """Reconciliation change awaiting manual approval (reconcile.mode = approve)."""
+    __tablename__ = "pending_changes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ise_id: Mapped[str] = mapped_column(String(64), index=True)
+    device_name: Mapped[str] = mapped_column(String(255), default="")
+    device_ip: Mapped[str] = mapped_column(String(64), default="")
+    rule: Mapped[str] = mapped_column(String(255), default="")
+    old_ndgs: Mapped[str] = mapped_column(Text, default="")   # JSON list
+    new_ndgs: Mapped[str] = mapped_column(Text, default="")   # JSON list
+    targets: Mapped[str] = mapped_column(Text, default="")    # JSON: device_type/location/create_location
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|applied|rejected|failed
+    resolved: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     message: Mapped[str] = mapped_column(Text, default="")

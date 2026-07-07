@@ -1,13 +1,26 @@
 """Cisco ISE client — ERS (default) or OpenAPI (ISE 3.1+) flavor.
+Tested against ISE 3.1 / 3.2 (3.2.0.542) / 3.4 (3.4.0.608).
 
 ERS:     Basic auth on every call, https://{ise}:9060/ers/config/...
 OpenAPI: Basic auth,               https://{ise}/api/v1/...
 
 ERS must be enabled (Administration > System > Settings > API Settings) and the
 API user needs the "ERS Admin" role — surfaced as a hint in the GUI.
+
+The client keeps one pooled keep-alive connection per instance (use
+`async with ISEClient() as ise:` for bulk work) — ISE throttles per-request
+auth heavily, and re-handshaking TLS for every call both slows large scans
+down massively and provokes ISE's transient 401 responses. Some ISE builds
+(seen on 3.4.0.608) emit a non-RFC header line like `Unauthorized User: : 401`
+with those 401s, which strict HTTP parsers reject as "illegal header line" —
+all transport/protocol errors are retried and wrapped into ISEError so one
+bad response can't abort a whole reconciliation run.
 """
+import asyncio
 import logging
 from urllib.parse import urlparse
+
+import httpx
 
 from ..http_utils import make_client, request_with_retry
 from ..settings_store import get_setting, get_bool, get_int
@@ -38,12 +51,38 @@ class ISEClient:
         self.host = parsed.hostname or raw
         self.ers_base = f"https://{self.host}:{self.ers_port}/ers"
         self.openapi_base = f"https://{self.host}{f':{parsed.port}' if parsed.port and parsed.port not in (self.ers_port,) else ''}/api/v1"
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = make_client(self.verify_tls,
+                                       auth=(self.username, self.password),
+                                       headers=JSON_HEADERS)
+        return self._client
+
+    async def aclose(self):
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.aclose()
 
     async def _req(self, method: str, url: str, json_body=None, params=None):
-        async with make_client(self.verify_tls, auth=(self.username, self.password),
-                               headers=JSON_HEADERS) as c:
-            resp = await request_with_retry(c, method, url, json=json_body, params=params)
-        return resp
+        try:
+            return await request_with_retry(self._http(), method, url,
+                                            json=json_body, params=params)
+        except httpx.RemoteProtocolError as exc:
+            # malformed ISE response (e.g. "Unauthorized User: : 401" header on
+            # 3.4) — usually transient throttling; back off once and re-raise
+            # as ISEError so callers can continue with the next device
+            await asyncio.sleep(2)
+            raise ISEError(f"ISE sent a malformed HTTP response (transient 401/"
+                           f"throttling on some ISE builds): {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise ISEError(f"ISE request failed: {exc.__class__.__name__}: {exc}") from exc
 
     async def _get_json(self, url: str, params=None) -> dict:
         resp = await self._req("GET", url, params=params)
@@ -167,10 +206,16 @@ class ISEClient:
         return await self.get_device(items[0]["id"])
 
     async def find_device(self, name: str = "", ip: str = "") -> dict | None:
-        """Find device by name, falling back to IP. Returns the full object."""
+        """Find device by name (FQDN, then short hostname — CC often reports the
+        FQDN while ISE stores the short name), falling back to IP. Returns the
+        full object."""
+        names = [name] if name else []
+        short = name.split(".")[0] if name else ""
+        if short and short != name:
+            names.append(short)
         if self.flavor == "openapi":
-            if name:
-                dev = await self.get_device(name)  # OpenAPI addresses devices by name
+            for n in names:
+                dev = await self.get_device(n)  # OpenAPI addresses devices by name
                 if dev:
                     return dev
             if ip:
@@ -180,8 +225,8 @@ class ISEClient:
                 if items:
                     return await self.get_device(items[0].get("name") or items[0].get("id"))
             return None
-        if name:
-            dev = await self._find_ers(f"name.EQ.{name}")
+        for n in names:
+            dev = await self._find_ers(f"name.EQ.{n}")
             if dev:
                 return dev
         if ip:

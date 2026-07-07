@@ -57,14 +57,16 @@ async function loadDashboard() {
 const SETTING_IDS = ["cc.base_url","cc.username","cc.password","cc.verify_tls",
   "ise.base_url","ise.api_flavor","ise.ers_port","ise.username","ise.password","ise.verify_tls",
   "webhook.path","webhook.token","sync.debounce_seconds","sync.retry_schedule",
-  "ndg.refresh_hours","reconcile.enabled","reconcile.minutes","ui.admin_password"];
+  "ndg.refresh_hours","reconcile.enabled","reconcile.minutes","reconcile.mode",
+  "reconcile.detail_ttl_hours","reconcile.exclude","ui.admin_password"];
 
 async function loadSettings() {
   const s = await api("/api/settings");
   for (const key of SETTING_IDS) {
     const el = document.getElementById(`s-${key}`);
     if (!el || !s[key]) continue;
-    if (el.type === "checkbox") el.checked = /^(1|true|yes|on)$/i.test(s[key].value);
+    if (key === "reconcile.mode") el.checked = s[key].value === "approve";
+    else if (el.type === "checkbox") el.checked = /^(1|true|yes|on)$/i.test(s[key].value);
     else el.value = s[key].value;
     el.disabled = s[key].env_override;
     el.title = s[key].env_override ? "Overridden by environment variable" : "";
@@ -76,7 +78,8 @@ async function saveSettings() {
   for (const key of SETTING_IDS) {
     const el = document.getElementById(`s-${key}`);
     if (!el || el.disabled) continue;
-    payload[key] = el.type === "checkbox" ? String(el.checked) : el.value;
+    if (key === "reconcile.mode") payload[key] = el.checked ? "approve" : "auto";
+    else payload[key] = el.type === "checkbox" ? String(el.checked) : el.value;
   }
   try {
     const r = await api("/api/settings", {method: "PUT", body: payload});
@@ -324,13 +327,43 @@ async function refreshNdg() {
 async function loadReconcile() {
   const d = await api("/api/reconcile");
   $("#reconcile-status").textContent = d.running ? "⏳ running…" : "";
+  const pending = d.pending || [];
+  $("#pending-card").classList.toggle("hidden", pending.length === 0);
+  $("#pending-count").textContent = `${pending.length} change(s) waiting`;
+  $("#pending-table tbody").innerHTML = pending.map((p) => `<tr>
+      <td>${esc((p.created || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(p.device_name)}${p.device_ip ? "<br><span class='hint'>" + esc(p.device_ip) + "</span>" : ""}</td>
+      <td>${esc(p.rule)}</td>
+      <td><div class="ndg-diff"><span class="ndg-old">${esc(p.old_ndgs.join(", "))}</span><br>
+          <span class="ndg-new">${esc(p.new_ndgs.join(", "))}</span></div></td>
+      <td><button class="primary" onclick="approvePending(${p.id})">Approve</button>
+          <button class="danger" onclick="rejectPending(${p.id})">Reject</button></td>
+    </tr>`).join("");
   $("#reconcile-table tbody").innerHTML = d.runs.map((r) => `<tr>
       <td>${esc((r.started || "").replace("T", " ").slice(0, 19))}</td>
       <td>${esc((r.finished || "").replace("T", " ").slice(0, 19))}</td>
       <td class="status-${esc(r.status)}">${esc(r.status)}${r.message ? " — " + esc(r.message) : ""}</td>
-      <td>${r.scanned}</td><td>${r.fixed}</td><td>${r.unmatched}</td>
-      <td>${r.not_found_in_cc}</td><td>${r.errors}</td>
-    </tr>`).join("") || `<tr><td colspan="8" class="hint">No runs yet.</td></tr>`;
+      <td>${r.scanned}</td><td>${r.fixed}</td><td>${r.pending ?? 0}</td><td>${r.unmatched}</td>
+      <td>${r.not_found_in_cc}</td><td>${r.excluded ?? 0}</td><td>${r.errors}</td>
+    </tr>`).join("") || `<tr><td colspan="10" class="hint">No runs yet.</td></tr>`;
+}
+
+async function approvePending(id) {
+  const r = await api(`/api/pending/${id}/approve`, {method: "POST"});
+  if (r.status !== "success") alert("Apply failed: " + (r.message || "unknown error"));
+  loadReconcile();
+}
+
+async function rejectPending(id) {
+  await api(`/api/pending/${id}/reject`, {method: "POST"});
+  loadReconcile();
+}
+
+async function approveAllPending() {
+  if (!confirm("Apply ALL pending changes to ISE?")) return;
+  const r = await api("/api/pending/approve-all", {method: "POST"});
+  alert(`Applied: ${r.applied}, failed: ${r.failed}`);
+  loadReconcile();
 }
 
 async function runReconcile() {

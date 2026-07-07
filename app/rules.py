@@ -12,23 +12,25 @@ LOCATION_ROOT = "Location"
 
 
 def _regex_match(pattern: str, value: str) -> bool:
-    """Empty pattern = wildcard. Falls back to exact compare on invalid regex."""
+    """Empty pattern = wildcard; matching is case-insensitive (hostnames, sites
+    etc. differ in casing between CC and ISE). Falls back to exact compare on
+    invalid regex."""
     if not pattern:
         return True
     try:
-        return re.search(pattern, value or "") is not None
+        return re.search(pattern, value or "", re.IGNORECASE) is not None
     except re.error:
-        return pattern == value
+        return pattern.lower() == (value or "").lower()
 
 
 def _tag_match(pattern: str, tags: list[str]) -> bool:
-    """Exact tag name or regex against any of the device's tags."""
+    """Exact tag name or regex against any of the device's tags (case-insensitive)."""
     if not pattern:
         return True
-    if pattern in tags:
+    if pattern.lower() in (t.lower() for t in tags):
         return True
     try:
-        rx = re.compile(pattern)
+        rx = re.compile(pattern, re.IGNORECASE)
     except re.error:
         return False
     return any(rx.search(t) for t in tags)

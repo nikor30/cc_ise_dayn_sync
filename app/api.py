@@ -42,12 +42,14 @@ async def healthz():
         cc_ok = ise_ok = False
         if get_setting("cc.base_url"):
             try:
-                cc_ok = await _check(CatalystClient()._get_token())
+                async with CatalystClient() as cc:
+                    cc_ok = await _check(cc._get_token())
             except CatalystError:
                 cc_ok = False
         if get_setting("ise.base_url"):
             try:
-                ise_ok = await _check(ISEClient().list_devices())
+                async with ISEClient() as ise:
+                    ise_ok = await _check(ise.list_ndgs())
             except ISEError:
                 ise_ok = False
         _health_cache.update(ts=now, data={"status": "ok", "cc_reachable": cc_ok,
@@ -116,15 +118,17 @@ async def put_settings(payload: dict):
 @router.post("/api/test/cc")
 async def test_cc():
     try:
-        return await CatalystClient().test_connection()
-    except (CatalystError, Exception) as exc:  # noqa: BLE001 - report any failure to GUI
+        async with CatalystClient() as cc:
+            return await cc.test_connection()
+    except Exception as exc:  # noqa: BLE001 - report any failure to GUI
         return {"ok": False, "message": str(exc)}
 
 
 @router.post("/api/test/ise")
 async def test_ise():
     try:
-        return await ISEClient().test_connection()
+        async with ISEClient() as ise:
+            return await ise.test_connection()
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": str(exc),
                 "hint": "Enable ERS under Administration > System > Settings > API Settings "
@@ -260,7 +264,8 @@ async def delete_sitemap(map_id: int):
 @router.get("/api/cc/devices")
 async def cc_devices():
     try:
-        return await CatalystClient().list_devices()
+        async with CatalystClient() as cc:
+            return await cc.list_devices()
     except CatalystError as exc:
         raise HTTPException(502, str(exc))
 
@@ -334,7 +339,8 @@ async def dashboard():
 
 @router.get("/api/reconcile")
 async def reconcile_status():
-    return {"running": reconcile.is_running(), "runs": reconcile.last_runs(10)}
+    return {"running": reconcile.is_running(), "runs": reconcile.last_runs(10),
+            "pending": reconcile.list_pending()}
 
 
 @router.post("/api/reconcile/run")
@@ -343,6 +349,27 @@ async def reconcile_run():
         return {"status": "skipped", "message": "already running"}
     asyncio.create_task(reconcile.run_reconciliation())
     return {"status": "started"}
+
+
+# --------------------------------------------------------------------------- pending approvals
+@router.get("/api/pending")
+async def pending_list():
+    return reconcile.list_pending()
+
+
+@router.post("/api/pending/{pid}/approve")
+async def pending_approve(pid: int):
+    return await reconcile.apply_pending(pid)
+
+
+@router.post("/api/pending/{pid}/reject")
+async def pending_reject(pid: int):
+    return reconcile.reject_pending(pid)
+
+
+@router.post("/api/pending/approve-all")
+async def pending_approve_all():
+    return await reconcile.apply_all_pending()
 
 
 # --------------------------------------------------------------------------- export / import

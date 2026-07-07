@@ -13,6 +13,7 @@ services:
       # - ./data:/data
     environment:
       LOG_LEVEL: INFO
+      PORT: "8090"            # must match the container side of the port mapping above
       # Everything below is optional — the GUI persists settings in /data/app.db.
       # Env vars override GUI values (12-factor style):
       # CC_BASE_URL: https://catalystcenter.example.com
@@ -32,6 +33,9 @@ services:
       # NDG_REFRESH_HOURS: "6"
       # RECONCILE_ENABLED: "true"
       # RECONCILE_MINUTES: "30"
+      # RECONCILE_MODE: auto           # or: approve (queue changes for manual approval)
+      # RECONCILE_EXCLUDE: "^lab-.*"   # regex per line, matched on ISE device name/IP
+      # RECONCILE_DETAIL_TTL_HOURS: "24"
       # UI_ADMIN_PASSWORD: change-me
 
 volumes:
