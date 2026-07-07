@@ -10,7 +10,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
-from . import audit, ndg, reconcile
+from . import audit, blacklist, ndg, reconcile
 from .clients.catalyst import CatalystClient, CatalystError
 from .clients.ise import ISEClient, ISEError
 from .db import SessionLocal
@@ -372,6 +372,46 @@ async def pending_reject(pid: int):
 @router.post("/api/pending/approve-all")
 async def pending_approve_all():
     return await reconcile.apply_all_pending()
+
+
+@router.post("/api/pending/{pid}/blacklist")
+async def pending_blacklist(pid: int):
+    """Reject a pending change AND blacklist the device so it is never touched again."""
+    item = next((p for p in reconcile.list_pending() if p["id"] == pid), None)
+    if item is None:
+        raise HTTPException(404, "pending change not found")
+    entry = blacklist.add(item["device_name"], item["device_ip"],
+                          note=f"blacklisted from pending change #{pid}")
+    reconcile.reject_pending(pid)
+    audit.record("manual", "info", device_name=item["device_name"],
+                 device_ip=item["device_ip"],
+                 message="device blacklisted, pending change rejected")
+    return {"status": "blacklisted", **entry}
+
+
+# --------------------------------------------------------------------------- blacklist
+@router.get("/api/blacklist")
+async def blacklist_list():
+    return blacklist.load()
+
+
+@router.post("/api/blacklist")
+async def blacklist_add(payload: dict):
+    try:
+        entry = blacklist.add(payload.get("name", ""), payload.get("ip", ""),
+                              payload.get("note", ""))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    audit.record("manual", "info", device_name=payload.get("name", ""),
+                 device_ip=payload.get("ip", ""), message="device blacklisted")
+    return entry
+
+
+@router.delete("/api/blacklist/{entry_id}")
+async def blacklist_remove(entry_id: int):
+    if not blacklist.remove(entry_id):
+        raise HTTPException(404, "blacklist entry not found")
+    return {"deleted": entry_id}
 
 
 # --------------------------------------------------------------------------- export / import

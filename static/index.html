@@ -165,6 +165,22 @@
     <th>Pending</th><th>Unmatched (no rule)</th><th>Not in CC</th><th>Excluded</th><th>Errors</th></tr></thead>
     <tbody></tbody>
   </table>
+  <div class="card">
+    <h3>Device blacklist</h3>
+    <p class="hint">Blacklisted devices are never touched — skipped by both the webhook pipeline and
+    reconciliation (counted as "Excluded"). Name matches FQDN and short hostname, IP matches exactly,
+    both case-insensitive.</p>
+    <div class="row">
+      <input id="bl-name" placeholder="Device name (FQDN or short)" style="flex:1">
+      <input id="bl-ip" placeholder="IP address" style="width:11em">
+      <input id="bl-note" placeholder="Note (why?)" style="flex:1">
+      <button class="primary" onclick="addBlacklist()">Add to blacklist</button>
+    </div>
+    <table id="blacklist-table">
+      <thead><tr><th>Added</th><th>Name</th><th>IP</th><th>Note</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </section>
 
 <section id="tab-audit" class="tab">

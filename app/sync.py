@@ -4,7 +4,7 @@ import logging
 
 from .clients.catalyst import CatalystClient, CatalystError
 from .clients.ise import ISEClient, ISEError
-from . import audit, rules
+from . import audit, blacklist, rules
 from .settings_store import retry_schedule
 
 log = logging.getLogger(__name__)
@@ -81,6 +81,10 @@ async def apply_to_ise(ise: ISEClient, ise_device: dict, targets: dict) -> tuple
 async def process_device_event(ref: dict, trigger: str = "webhook", raw=None) -> dict:
     """Full pipeline for one device. `ref` = {id|hostname|ip}."""
     label = ref.get("hostname") or ref.get("ip") or ref.get("id") or "?"
+    if blacklist.is_blacklisted(ref.get("hostname", ""), ref.get("ip", "")):
+        audit.record(trigger, "skipped", device_name=ref.get("hostname", label),
+                     device_ip=ref.get("ip", ""), message="device is blacklisted", raw=raw)
+        return {"status": "skipped", "message": "device is blacklisted"}
     try:
         async with CatalystClient() as cc:
             device = await enrich_from_cc(cc, ref)
@@ -92,8 +96,12 @@ async def process_device_event(ref: dict, trigger: str = "webhook", raw=None) ->
                      message="device not found in Catalyst Center inventory", raw=raw)
         return {"status": "failed", "message": "device not found in Catalyst Center"}
 
-    plan = plan_for_device(device)
     name, ip = device.get("hostname", ""), device.get("ip", "")
+    if blacklist.is_blacklisted(name, ip):  # re-check with CC-resolved identity
+        audit.record(trigger, "skipped", device_name=name, device_ip=ip,
+                     message="device is blacklisted", raw=raw)
+        return {"status": "skipped", "message": "device is blacklisted"}
+    plan = plan_for_device(device)
     if not plan["matched"]:
         audit.record(trigger, "skipped", device_name=name, device_ip=ip,
                      message="no mapping rule matched", raw=raw)
