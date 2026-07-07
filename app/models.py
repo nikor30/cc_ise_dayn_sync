@@ -88,6 +88,7 @@ class ReconcileRun(Base):
     excluded: Mapped[int] = mapped_column(Integer, default=0)
     errors: Mapped[int] = mapped_column(Integer, default=0)
     message: Mapped[str] = mapped_column(Text, default="")
+    details: Mapped[str] = mapped_column(Text, default="")  # JSON: device names per bucket
 
 
 class ISEDeviceCache(Base):

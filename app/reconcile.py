@@ -90,6 +90,16 @@ async def run_reconciliation() -> dict:
             run_id = run.id
         stats = {"scanned": 0, "fixed": 0, "pending": 0, "unmatched": 0,
                  "not_found_in_cc": 0, "excluded": 0, "errors": 0}
+        # device names per bucket, so the GUI can show WHY a device was skipped
+        details: dict[str, list[str]] = {k: [] for k in
+                                         ("fixed", "pending", "unmatched",
+                                          "not_found_in_cc", "excluded", "errors")}
+
+        def note(bucket: str, name: str, cap: int = 300):
+            stats[bucket] += 1
+            if len(details[bucket]) < cap:
+                details[bucket].append(name)
+
         status, message = "done", ""
         approve = get_setting("reconcile.mode").strip().lower() == "approve"
         ttl = timedelta(hours=max(0, get_int("reconcile.detail_ttl_hours", 24)))
@@ -111,7 +121,7 @@ async def run_reconciliation() -> dict:
                     if dev_id:
                         seen_ids.add(dev_id)
                     if _excluded(excludes, dev_name) or blacklist.matches(blacklisted, dev_name):
-                        stats["excluded"] += 1
+                        note("excluded", dev_name)
                         continue
                     cached = cache.get(dev_id)
                     if cached is not None:
@@ -131,22 +141,22 @@ async def run_reconciliation() -> dict:
                             continue
                         if _excluded(excludes, ip) or blacklist.matches(
                                 blacklisted, full.get("name", ""), ip):
-                            stats["excluded"] += 1
+                            note("excluded", dev_name)
                             continue
                         if cc is None:
                             cc = CatalystClient()
                         device = await enrich_from_cc(
                             cc, {"hostname": full.get("name", ""), "ip": ip})
                         if device is None:
-                            stats["not_found_in_cc"] += 1
+                            note("not_found_in_cc", dev_name)
                             continue
                         plan = plan_for_device(device)
                         if not plan["matched"]:
-                            stats["unmatched"] += 1
+                            note("unmatched", dev_name)
                             continue
                         targets = plan["targets"]
                         if not targets.get("device_type") and not targets.get("location"):
-                            stats["unmatched"] += 1
+                            note("unmatched", dev_name)
                             continue
                         new_ndgs = merge_ndgs(ndgs, targets.get("device_type"),
                                               targets.get("location"))
@@ -156,7 +166,7 @@ async def run_reconciliation() -> dict:
                         if approve:
                             _queue_pending(dev_id, full.get("name", dev_name), ip,
                                            rule_label, ndgs, new_ndgs, targets)
-                            stats["pending"] += 1
+                            note("pending", dev_name)
                         else:
                             old, new = await apply_to_ise(ise, full, targets)
                             _update_cache(dev_id, full.get("name", dev_name), ip, new, now)
@@ -164,14 +174,14 @@ async def run_reconciliation() -> dict:
                                          device_name=full.get("name", dev_name),
                                          device_ip=ip, rule=rule_label,
                                          old_ndgs=old, new_ndgs=new, message="updated")
-                            stats["fixed"] += 1
+                            note("fixed", dev_name)
                     except (ISEError, CatalystError) as exc:
-                        stats["errors"] += 1
+                        note("errors", f"{dev_name}: {str(exc)[:200]}")
                         if not first_error:
                             first_error = f"{dev_name}: {exc}"
                         log.warning("reconcile: error on %s: %s", dev_name, exc)
                     except Exception as exc:  # noqa: BLE001 - keep scanning
-                        stats["errors"] += 1
+                        note("errors", f"{dev_name}: {str(exc)[:200]}")
                         if not first_error:
                             first_error = f"{dev_name}: {exc}"
                         log.exception("reconcile: unexpected error on %s", dev_name)
@@ -198,6 +208,7 @@ async def run_reconciliation() -> dict:
             for key in ("scanned", "fixed", "pending", "unmatched",
                         "not_found_in_cc", "excluded", "errors"):
                 setattr(run, key, stats[key])
+            run.details = json.dumps(details)
             s.commit()
         audit.record("reconcile", "info" if status == "done" else "failed",
                      message=f"reconciliation {status}: {stats} {message}".strip())
@@ -279,6 +290,7 @@ def last_runs(limit: int = 10) -> list[dict]:
             "pending": r.pending, "unmatched": r.unmatched,
             "not_found_in_cc": r.not_found_in_cc, "excluded": r.excluded,
             "errors": r.errors, "message": r.message,
+            "details": json.loads(r.details) if r.details else {},
         } for r in runs]
 
 

@@ -38,8 +38,15 @@ async def refresh_ndg_cache() -> dict:
                 row.ise_id = item.get("id", "") or row.ise_id
                 row.ndg_type = classify(name)
             row.last_seen = now
-        # drop entries that vanished from ISE
-        removed = s.query(NDGCache).filter(NDGCache.last_seen < now).delete()
+        # Persist the updates BEFORE pruning: a bulk delete executes
+        # immediately, and pruning by timestamp raced against the unflushed
+        # last_seen updates (wiping every row on the second refresh).
+        s.flush()
+        removed = 0
+        if seen:  # never wipe the cache on an empty ISE answer
+            removed = (s.query(NDGCache)
+                       .filter(NDGCache.name.not_in(seen))
+                       .delete(synchronize_session=False))
         s.commit()
     counts = {
         "total": len(seen),
