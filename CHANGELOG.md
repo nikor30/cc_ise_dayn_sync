@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0 — 2026-07-07
+
+### Added
+- **Webhook debug panel** on the Dashboard: shows the exact destination URL to
+  configure in Catalyst Center, whether a shared token is set, received/rejected
+  counters (24 h), the last delivery time and the last 10 deliveries with
+  status, parsed device and the full raw payload (expandable). Rejected
+  deliveries (wrong/missing `X-Auth-Token`) are visible immediately.
+- **Webhook → reconciliation trigger** (`webhook.trigger_reconcile`): when
+  enabled, every valid webhook also schedules a reconciliation run after the
+  debounce delay (bursts coalesce into one run). Useful when the CC event
+  payload contains no usable device reference — the reconciliation then picks
+  the device up anyway.
+- **Force overwrite** (`POST /api/force-sync` + "⚡ Force overwrite in ISE"
+  button in the Dry-run panel): applies the matching rule to one device NOW
+  and overwrites its NDGs in ISE — bypasses reconciliation scope, the
+  compliance cache and approval mode. Fails fast if the device is not in ISE
+  (no retry backoff). Blacklisted devices are still refused. Result appears
+  in the audit log with trigger `manual`.
+
 ## 1.4.0 — 2026-07-07
 
 ### Added

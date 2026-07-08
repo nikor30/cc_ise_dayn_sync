@@ -169,6 +169,7 @@ and show as read-only in the GUI.
 | `ISE_API_FLAVOR` | `ers` | `ers` or `openapi` (ISE 3.1+) |
 | `WEBHOOK_TOKEN` | – | Shared secret CC must send as `X-Auth-Token` |
 | `WEBHOOK_PATH` | `/webhook/catalystcenter` | Webhook listen path (must be under `/webhook/`) |
+| `WEBHOOK_TRIGGER_RECONCILE` | `false` | Every valid webhook also schedules a reconciliation run |
 | `SYNC_DEBOUNCE_SECONDS` | `60` | Coalesce window per device |
 | `SYNC_RETRY_SCHEDULE` | `30,60,120,300,900` | ISE lookup backoff (seconds) |
 | `NDG_REFRESH_HOURS` | `6` | NDG cache refresh interval |
@@ -194,8 +195,18 @@ exponential-backoff retries and respect the per-system verify-TLS toggle.
   (also wired as the Docker `HEALTHCHECK`).
 - **Backup/restore:** *Settings → Export config* downloads rules + site mappings +
   non-secret settings as JSON; *Import config* restores them.
+- **Webhook debugging:** the Dashboard's *Webhook debug* panel shows the exact
+  destination URL for Catalyst Center, token status, received/rejected
+  counters and the last deliveries including raw payloads — use CC's webhook
+  "test" button and watch the delivery appear there. Optionally enable
+  *"Every valid webhook also triggers a reconciliation run"* in Settings so
+  even events without a parsable device reference cause a fix-up run.
 - **Webhook test:** *Mapping Rules → Webhook payload test* replays a sample
   payload through the parser + rule engine without writing to ISE.
+- **Force overwrite:** the Dry-run panel's *"⚡ Force overwrite in ISE"* button
+  applies the matching rule to the selected device immediately — bypassing
+  reconciliation scope, the compliance cache and approval mode (blacklist
+  still wins).
 - **Logs:** stdout, container-friendly, level via `LOG_LEVEL`.
 
 ## Development

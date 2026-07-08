@@ -28,6 +28,17 @@
   <div class="tiles" id="dash-tiles"></div>
   <h3>Last reconciliation</h3>
   <div id="dash-reconcile" class="card">–</div>
+  <h3>Webhook debug</h3>
+  <div class="card">
+    <div id="webhook-summary" class="row"></div>
+    <table id="webhook-table">
+      <thead><tr><th>Time</th><th>Status</th><th>Device</th><th>Message</th><th>Payload</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint">Every webhook delivery from Catalyst Center appears here (auto-refreshes with
+    the dashboard). A rejected delivery means the <code>X-Auth-Token</code> header does not match
+    the shared token in Settings.</p>
+  </div>
 </section>
 
 <section id="tab-settings" class="tab">
@@ -65,6 +76,9 @@
       <h3>Webhook</h3>
       <label>Listen path <input id="s-webhook.path" placeholder="/webhook/catalystcenter"></label>
       <label>Shared token (header <code>X-Auth-Token</code>) <input id="s-webhook.token" type="password"></label>
+      <label class="chk"><input id="s-webhook.trigger_reconcile" type="checkbox">
+        Every valid webhook also triggers a reconciliation run (after the debounce delay) —
+        useful when the CC payload contains no usable device reference</label>
       <label>Debounce seconds <input id="s-sync.debounce_seconds" type="number"></label>
       <label>ISE lookup retry schedule (s) <input id="s-sync.retry_schedule" placeholder="30,60,120,300,900"></label>
     </div>
@@ -112,6 +126,9 @@
       <button onclick="loadCcDevices()">Load CC inventory</button>
       <input id="dryrun-manual" placeholder="…or hostname / IP">
       <button class="primary" onclick="runDryRun()">Simulate</button>
+      <button class="danger" onclick="runForceSync()"
+        title="Apply the matching rule NOW and overwrite the device's NDGs in ISE — bypasses scope, cache and approval mode">
+        ⚡ Force overwrite in ISE</button>
     </div>
     <pre id="dryrun-result" class="result hidden"></pre>
     <h4>Webhook payload test</h4>

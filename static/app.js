@@ -50,13 +50,36 @@ async function loadDashboard() {
          scanned ${r.scanned}, fixed ${r.fixed}, unmatched ${r.unmatched},
          not in CC ${r.not_found_in_cc}, errors ${r.errors}`
       : "No reconciliation run yet.";
+    loadWebhookDebug();
+  } catch (e) { console.error(e); }
+}
+
+async function loadWebhookDebug() {
+  try {
+    const w = await api("/api/webhook/status");
+    const url = `${window.location.origin}${w.path}`;
+    $("#webhook-summary").innerHTML = `
+      <span class="badge ${w.token_set ? "ok" : "bad"}">${w.token_set ? "token set" : "NO TOKEN"}</span>
+      <span class="badge ${w.trigger_reconcile ? "ok" : ""}">reconcile trigger ${w.trigger_reconcile ? "on" : "off"}</span>
+      <span><b>${w.received_24h}</b> received / <b>${w.rejected_24h}</b> rejected (24 h)</span>
+      <span class="hint">last: ${w.last_received ? esc(w.last_received.replace("T", " ").slice(0, 19)) : "never"}</span>
+      <span class="hint" style="margin-left:auto">CC destination URL: <code>${esc(url)}</code></span>`;
+    $("#webhook-table tbody").innerHTML = w.recent.map((e) => `<tr>
+        <td>${esc((e.ts || "").replace("T", " ").slice(0, 19))}</td>
+        <td class="status-${esc(e.status)}">${esc(e.status)}</td>
+        <td>${esc(e.device_name)}${e.device_ip ? "<br><span class='hint'>" + esc(e.device_ip) + "</span>" : ""}</td>
+        <td>${esc(e.message)}</td>
+        <td>${e.raw ? `<details class="raw"><summary>raw payload</summary><pre class="result">${esc(e.raw)}</pre></details>` : "—"}</td>
+      </tr>`).join("") || `<tr><td colspan="5" class="hint">No webhook received yet — configure the
+      destination URL above in Catalyst Center and use its test button.</td></tr>`;
   } catch (e) { console.error(e); }
 }
 
 /* ------------------------------------------------ settings */
 const SETTING_IDS = ["cc.base_url","cc.username","cc.password","cc.verify_tls",
   "ise.base_url","ise.api_flavor","ise.ers_port","ise.username","ise.password","ise.verify_tls",
-  "webhook.path","webhook.token","sync.debounce_seconds","sync.retry_schedule",
+  "webhook.path","webhook.token","webhook.trigger_reconcile",
+  "sync.debounce_seconds","sync.retry_schedule",
   "ndg.refresh_hours","reconcile.enabled","reconcile.minutes","reconcile.mode",
   "reconcile.scope","reconcile.detail_ttl_hours","reconcile.exclude","ui.admin_password"];
 
@@ -266,6 +289,21 @@ async function runDryRun() {
   out.classList.remove("hidden");
   out.textContent = "simulating…";
   try { out.textContent = JSON.stringify(await api("/api/dryrun", {method: "POST", body}), null, 2); }
+  catch (e) { out.textContent = e.message; }
+}
+
+async function runForceSync() {
+  const id = $("#dryrun-device").value;
+  const manual = $("#dryrun-manual").value.trim();
+  const body = id ? {id} : (/^\d+\.\d+\.\d+\.\d+$/.test(manual) ? {ip: manual} : {hostname: manual});
+  const label = id ? $("#dryrun-device").selectedOptions[0].text : manual;
+  if (!id && !manual) { alert("Pick a device or enter a hostname/IP first."); return; }
+  if (!confirm(`FORCE overwrite the NDGs of ${label} in ISE now?\n` +
+               "This bypasses scope, cache and approval mode.")) return;
+  const out = $("#dryrun-result");
+  out.classList.remove("hidden");
+  out.textContent = "applying to ISE…";
+  try { out.textContent = JSON.stringify(await api("/api/force-sync", {method: "POST", body}), null, 2); }
   catch (e) { out.textContent = e.message; }
 }
 

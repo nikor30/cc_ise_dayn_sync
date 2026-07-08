@@ -78,8 +78,11 @@ async def apply_to_ise(ise: ISEClient, ise_device: dict, targets: dict) -> tuple
     return old_ndgs, new_ndgs
 
 
-async def process_device_event(ref: dict, trigger: str = "webhook", raw=None) -> dict:
-    """Full pipeline for one device. `ref` = {id|hostname|ip}."""
+async def process_device_event(ref: dict, trigger: str = "webhook", raw=None,
+                               retry_lookup: bool = True) -> dict:
+    """Full pipeline for one device. `ref` = {id|hostname|ip}.
+    `retry_lookup=False` fails fast when the device is not in ISE (used by the
+    GUI force-sync so the request returns immediately)."""
     label = ref.get("hostname") or ref.get("ip") or ref.get("id") or "?"
     if blacklist.is_blacklisted(ref.get("hostname", ""), ref.get("ip", "")):
         audit.record(trigger, "skipped", device_name=ref.get("hostname", label),
@@ -119,7 +122,10 @@ async def process_device_event(ref: dict, trigger: str = "webhook", raw=None) ->
                             rule=rule_label, message="processing", raw=raw)
     try:
         async with ISEClient() as ise:
-            ise_device = await find_in_ise_with_retry(ise, name, ip, audit_id)
+            if retry_lookup:
+                ise_device = await find_in_ise_with_retry(ise, name, ip, audit_id)
+            else:
+                ise_device = await ise.find_device(name=name, ip=ip)
             if ise_device is None:
                 audit.update_status(audit_id, "failed",
                                     "device never appeared in ISE within the retry window")

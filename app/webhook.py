@@ -90,3 +90,36 @@ class DebounceQueue:
 
 
 queue = DebounceQueue()
+
+
+class DebouncedAction:
+    """Run one async action after a quiet period, coalescing repeated triggers
+    (used for 'webhook received -> run reconciliation')."""
+
+    def __init__(self, action, name: str = ""):
+        self._action = action
+        self._task: asyncio.Task | None = None
+        self.name = name
+
+    def schedule(self, delay: int):
+        if self._task and not self._task.done():
+            self._task.cancel()
+        self._task = asyncio.create_task(self._fire(delay))
+        log.info("scheduled %s in %ds", self.name, delay)
+
+    async def _fire(self, delay: int):
+        try:
+            await asyncio.sleep(delay)
+            await self._action()
+        except asyncio.CancelledError:
+            pass  # superseded by a newer trigger
+        except Exception:  # noqa: BLE001 - background action must not crash the app
+            log.exception("debounced action %s failed", self.name)
+
+
+async def _run_reconciliation():
+    from .reconcile import run_reconciliation  # avoid import cycle
+    await run_reconciliation()
+
+
+reconcile_trigger = DebouncedAction(_run_reconciliation, "webhook-triggered reconciliation")

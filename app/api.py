@@ -15,9 +15,10 @@ from .clients.catalyst import CatalystClient, CatalystError
 from .clients.ise import ISEClient, ISEError
 from .db import SessionLocal
 from .models import MappingRule, SiteMapping, AuditLog
-from .settings_store import (all_settings_masked, save_settings, get_setting)
-from .sync import dry_run
-from .webhook import queue, extract_device_ref
+from .settings_store import (all_settings_masked, save_settings, get_setting,
+                             get_bool, get_int)
+from .sync import dry_run, process_device_event
+from .webhook import queue, extract_device_ref, reconcile_trigger
 from . import scheduler as sched
 
 log = logging.getLogger(__name__)
@@ -76,16 +77,54 @@ async def webhook(rest: str, request: Request):
         payload = await request.json()
     except Exception:  # noqa: BLE001 - CC may send odd bodies; keep the raw text
         payload = {"_raw_body": (await request.body())[:10000].decode(errors="replace")}
+    # optionally let every valid webhook also schedule a reconciliation run —
+    # covers payloads we cannot parse a device out of
+    triggered = False
+    if get_bool("webhook.trigger_reconcile"):
+        reconcile_trigger.schedule(get_int("sync.debounce_seconds", 60))
+        triggered = True
     ref = extract_device_ref(payload)
     if not ref:
         audit.record("webhook", "skipped",
-                     message="no device reference found in payload", raw=payload)
-        return {"status": "ignored", "reason": "no device reference found"}
+                     message="no device reference found in payload"
+                             + ("; reconciliation triggered" if triggered else ""),
+                     raw=payload)
+        return {"status": "ignored", "reason": "no device reference found",
+                "reconcile_triggered": triggered}
     audit.record("webhook", "info", device_name=ref.get("hostname", ""),
                  device_ip=ref.get("ip", ""),
-                 message=f"webhook received, queued (ref={ref})", raw=payload)
+                 message=f"webhook received, queued (ref={ref})"
+                         + ("; reconciliation triggered" if triggered else ""),
+                 raw=payload)
     await queue.submit(ref, raw=payload)
-    return {"status": "queued", "device": ref}
+    return {"status": "queued", "device": ref, "reconcile_triggered": triggered}
+
+
+@router.get("/api/webhook/status")
+async def webhook_status():
+    """Webhook debug data for the dashboard: recent deliveries + counters."""
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    with SessionLocal() as s:
+        q = s.query(AuditLog).filter(AuditLog.trigger == "webhook")
+        received_24h = q.filter(AuditLog.ts >= since).count()
+        rejected_24h = (q.filter(AuditLog.ts >= since, AuditLog.status == "failed",
+                                 AuditLog.message.like("%token%")).count())
+        recent = q.order_by(AuditLog.id.desc()).limit(10).all()
+        items = [{
+            "ts": r.ts.isoformat() if r.ts else None, "status": r.status,
+            "device_name": r.device_name, "device_ip": r.device_ip,
+            "message": r.message, "raw": r.raw,
+        } for r in recent]
+    return {
+        "path": get_setting("webhook.path"),
+        "token_set": bool(get_setting("webhook.token")),
+        "trigger_reconcile": get_bool("webhook.trigger_reconcile"),
+        "received_24h": received_24h,
+        "rejected_24h": rejected_24h,
+        "last_received": items[0]["ts"] if items else None,
+        "recent": items,
+    }
 
 
 @router.post("/api/webhook-test")
@@ -288,6 +327,20 @@ async def dryrun(payload: dict):
         raise HTTPException(400, "provide id, hostname or ip")
     try:
         return await dry_run(ref)
+    except (CatalystError, ISEError) as exc:
+        return {"status": "failed", "message": str(exc)}
+
+
+@router.post("/api/force-sync")
+async def force_sync(payload: dict):
+    """Apply the matching rule to one device NOW and overwrite its NDGs in ISE —
+    bypasses reconciliation scope, compliance cache and approval mode.
+    Blacklisted devices are still refused."""
+    ref = {k: payload.get(k, "") for k in ("id", "hostname", "ip")}
+    if not any(ref.values()):
+        raise HTTPException(400, "provide id, hostname or ip")
+    try:
+        return await process_device_event(ref, trigger="manual", retry_lookup=False)
     except (CatalystError, ISEError) as exc:
         return {"status": "failed", "message": str(exc)}
 
