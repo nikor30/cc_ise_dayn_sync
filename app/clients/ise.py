@@ -35,6 +35,15 @@ class ISEError(Exception):
     pass
 
 
+WRITE_METHODS = {"POST", "PUT", "DELETE"}
+_RETRY_PAUSE = 3  # seconds before the one fresh-connection retry
+
+# Once one client instance detects that this ISE deployment enforces the
+# "CSRF Check for Enhanced Security" ERS setting, remember it process-wide so
+# subsequent clients fetch the token proactively instead of failing first.
+_csrf_detected = False
+
+
 class ISEClient:
     def __init__(self, base_url: str | None = None, username: str | None = None,
                  password: str | None = None, verify_tls: bool | None = None,
@@ -52,6 +61,8 @@ class ISEClient:
         self.ers_base = f"https://{self.host}:{self.ers_port}/ers"
         self.openapi_base = f"https://{self.host}{f':{parsed.port}' if parsed.port and parsed.port not in (self.ers_port,) else ''}/api/v1"
         self._client: httpx.AsyncClient | None = None
+        self._csrf_mode = _csrf_detected
+        self._csrf: str | None = None
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -70,19 +81,65 @@ class ISEClient:
     async def __aexit__(self, *exc):
         await self.aclose()
 
-    async def _req(self, method: str, url: str, json_body=None, params=None):
+    async def _fetch_csrf(self) -> str | None:
+        """Fetch a CSRF token for ERS writes (ISE 'CSRF Check for Enhanced
+        Security'). The token is bound to the session cookie, which the pooled
+        client keeps automatically."""
         try:
-            return await request_with_retry(self._http(), method, url,
-                                            json=json_body, params=params)
+            resp = await request_with_retry(
+                self._http(), "GET", f"{self.ers_base}/config/networkdevice/versioninfo",
+                headers={"X-CSRF-TOKEN": "fetch"})
+            self._csrf = (resp.headers.get("X-CSRF-Token")
+                          or resp.headers.get("X-CSRF-TOKEN"))
+            if self._csrf:
+                log.info("fetched ISE CSRF token for ERS writes")
+        except httpx.HTTPError as exc:
+            log.warning("could not fetch ISE CSRF token: %s", exc)
+            self._csrf = None
+        return self._csrf
+
+    async def _req(self, method: str, url: str, json_body=None, params=None,
+                   _retried: bool = False):
+        global _csrf_detected
+        is_write = method in WRITE_METHODS and self.flavor != "openapi"
+        headers = {}
+        if is_write and self._csrf_mode:
+            if not self._csrf:
+                await self._fetch_csrf()
+            if self._csrf:
+                headers["X-CSRF-TOKEN"] = self._csrf
+        try:
+            resp = await request_with_retry(self._http(), method, url,
+                                            json=json_body, params=params,
+                                            headers=headers or None)
         except httpx.RemoteProtocolError as exc:
-            # malformed ISE response (e.g. "Unauthorized User: : 401" header on
-            # 3.4) — usually transient throttling; back off once and re-raise
-            # as ISEError so callers can continue with the next device
-            await asyncio.sleep(2)
-            raise ISEError(f"ISE sent a malformed HTTP response (transient 401/"
-                           f"throttling on some ISE builds): {exc}") from exc
+            # ISE 3.2/3.4 answer with a non-RFC header line ("Unauthorized
+            # User: : 401") in two situations: an ERS write without a CSRF
+            # token while "CSRF Check for Enhanced Security" is enabled, or
+            # transient ERS throttling. Either way: drop the (possibly
+            # poisoned) connection, enable CSRF handling for writes, and
+            # retry once on a fresh session.
+            await self.aclose()
+            if not _retried:
+                if is_write:
+                    self._csrf_mode = True
+                    _csrf_detected = True
+                    self._csrf = None
+                await asyncio.sleep(_RETRY_PAUSE)
+                return await self._req(method, url, json_body, params, _retried=True)
+            raise ISEError("ISE sent a malformed HTTP response (CSRF check "
+                           "enabled or ERS throttling): "
+                           f"{exc}") from exc
         except httpx.HTTPError as exc:
             raise ISEError(f"ISE request failed: {exc.__class__.__name__}: {exc}") from exc
+        if resp.status_code == 401 and is_write and not _retried:
+            # some builds return a clean 401 instead of the malformed header
+            # when the CSRF token is missing or stale — fetch and retry once
+            self._csrf_mode = True
+            _csrf_detected = True
+            self._csrf = None
+            return await self._req(method, url, json_body, params, _retried=True)
+        return resp
 
     async def _get_json(self, url: str, params=None) -> dict:
         resp = await self._req("GET", url, params=params)
