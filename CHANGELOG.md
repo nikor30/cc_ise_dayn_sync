@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.0 — 2026-07-08
+
+### Fixed
+- **Webhook device identification** (bug: license/assurance events were skipped
+  with "no device reference found"): payload keys are now matched
+  case-insensitively with `_`/`-` stripped, so `details.device_ip` is
+  recognised like `deviceIp`. Additionally, a free-text fallback fishes the
+  device out of description strings such as
+  `"Registration succeeded for device 172.20.10.146 (SSTO146CIS.Global.web-int.net)"`
+  — that exact CC LicenseManagement payload now resolves to IP + hostname and
+  triggers the per-device update directly, no full reconciliation needed.
+
+### Added
+- **Webhook update mode** (Settings → Webhook, `WEBHOOK_UPDATE_MODE`) — choose
+  what the per-device webhook update may do:
+  - `overwrite` (default): apply the rule targets for Device Type and Location,
+    even over existing non-default NDGs
+  - `defaults-only`: only update devices still on the default NDGs
+  - `off`: never update per device (log only; rely on reconciliation /
+    the webhook→reconciliation trigger)
+  The manual force-overwrite button and reconciliation are unaffected by this
+  setting; every skip is visible in the audit log with its reason.
+
 ## 1.5.0 — 2026-07-07
 
 ### Added

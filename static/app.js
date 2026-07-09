@@ -78,7 +78,7 @@ async function loadWebhookDebug() {
 /* ------------------------------------------------ settings */
 const SETTING_IDS = ["cc.base_url","cc.username","cc.password","cc.verify_tls",
   "ise.base_url","ise.api_flavor","ise.ers_port","ise.username","ise.password","ise.verify_tls",
-  "webhook.path","webhook.token","webhook.trigger_reconcile",
+  "webhook.path","webhook.token","webhook.trigger_reconcile","webhook.update_mode",
   "sync.debounce_seconds","sync.retry_schedule",
   "ndg.refresh_hours","reconcile.enabled","reconcile.minutes","reconcile.mode",
   "reconcile.scope","reconcile.detail_ttl_hours","reconcile.exclude","ui.admin_password"];

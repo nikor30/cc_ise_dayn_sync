@@ -170,6 +170,7 @@ and show as read-only in the GUI.
 | `WEBHOOK_TOKEN` | – | Shared secret CC must send as `X-Auth-Token` |
 | `WEBHOOK_PATH` | `/webhook/catalystcenter` | Webhook listen path (must be under `/webhook/`) |
 | `WEBHOOK_TRIGGER_RECONCILE` | `false` | Every valid webhook also schedules a reconciliation run |
+| `WEBHOOK_UPDATE_MODE` | `overwrite` | Per-device webhook update: `overwrite`, `defaults-only` or `off` |
 | `SYNC_DEBOUNCE_SECONDS` | `60` | Coalesce window per device |
 | `SYNC_RETRY_SCHEDULE` | `30,60,120,300,900` | ISE lookup backoff (seconds) |
 | `NDG_REFRESH_HOURS` | `6` | NDG cache refresh interval |
