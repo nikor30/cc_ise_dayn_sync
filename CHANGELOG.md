@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.1 — 2026-07-09
+
+### Fixed
+- **ERS writes failed on ISE deployments with "CSRF Check for Enhanced
+  Security" enabled** (observed on production ISE 3.2.0.542; QA 3.4 without
+  the check was fine). Reads succeed but PUT/POST are rejected with the
+  malformed `Unauthorized User: : 401` header. The client now detects this,
+  fetches a CSRF token (`GET …/versioninfo` with `X-CSRF-TOKEN: fetch`) on the
+  same session and retries the write with the token — then keeps using CSRF
+  tokens proactively for the rest of the process lifetime. Clean 401s on
+  writes trigger the same token fetch/retry (stale-token handling). Both CSRF
+  modes of ISE now work without any configuration.
+- Malformed responses on reads (ERS throttling) are retried once on a fresh
+  connection before giving up.
+
 ## 1.6.0 — 2026-07-08
 
 ### Fixed
