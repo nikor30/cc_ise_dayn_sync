@@ -7,7 +7,7 @@ Resolution order for every setting (12-factor friendly):
 """
 import os
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DB_PATH = os.path.join(DATA_DIR, "app.db")
@@ -32,6 +32,11 @@ DEFAULTS = {
     "webhook.token": "",
     "webhook.path": "/webhook/catalystcenter",
     "webhook.trigger_reconcile": "false",  # every valid webhook also schedules a reconciliation run
+    # what the per-device webhook update may do:
+    #   "overwrite"     = apply rule targets, even over existing non-default NDGs
+    #   "defaults-only" = only update devices still on the default NDGs
+    #   "off"           = never update per device (log only / rely on reconciliation)
+    "webhook.update_mode": "overwrite",
     # Sync behaviour
     "sync.debounce_seconds": "60",
     "sync.retry_schedule": "30,60,120,300,900",  # ISE lookup backoff, seconds
@@ -65,6 +70,7 @@ ENV_MAP = {
     "WEBHOOK_TOKEN": "webhook.token",
     "WEBHOOK_PATH": "webhook.path",
     "WEBHOOK_TRIGGER_RECONCILE": "webhook.trigger_reconcile",
+    "WEBHOOK_UPDATE_MODE": "webhook.update_mode",
     "SYNC_DEBOUNCE_SECONDS": "sync.debounce_seconds",
     "SYNC_RETRY_SCHEDULE": "sync.retry_schedule",
     "NDG_REFRESH_HOURS": "ndg.refresh_hours",

@@ -6,6 +6,7 @@ shapes and log the full raw payload to the audit log.
 """
 import asyncio
 import logging
+import re
 
 from . import audit
 from .settings_store import get_int
@@ -13,38 +14,65 @@ from .sync import process_device_event
 
 log = logging.getLogger(__name__)
 
-ID_KEYS = ("networkDeviceId", "deviceId", "deviceUuid", "instanceUuid", "id")
-NAME_KEYS = ("hostname", "hostName", "deviceName", "name", "device_name", "managementIpAddr")
-IP_KEYS = ("managementIpAddress", "managementIpAddr", "ipAddress", "deviceIp", "ip")
+# Keys are matched case-insensitively with "_"/"-" stripped, so "device_ip",
+# "deviceIp" and "DEVICE-IP" are all recognised.
+ID_KEYS = {"networkdeviceid", "deviceid", "deviceuuid", "instanceuuid", "id"}
+NAME_KEYS = {"hostname", "devicename", "devicehostname", "name"}
+IP_KEYS = {"managementipaddress", "managementipaddr", "ipaddress", "deviceip",
+           "ip", "mgmtip", "managementip"}
+
+_IPV4 = re.compile(r"\b((?:\d{1,3}\.){3}\d{1,3})\b")
+# "... device 172.20.10.146 (SSTO146CIS.Global.web-int.net) ..." — CC license /
+# assurance events often carry the device only in free text like this
+_IP_WITH_HOST = re.compile(r"((?:\d{1,3}\.){3}\d{1,3})\s*\(([A-Za-z][A-Za-z0-9._-]*)\)")
 
 
-def _walk(obj, out: dict, depth: int = 0):
+def _norm_key(key: str) -> str:
+    return key.lower().replace("_", "").replace("-", "")
+
+
+def _walk(obj, out: dict, texts: list, depth: int = 0):
     if depth > 6 or not isinstance(obj, (dict, list)):
         return
     if isinstance(obj, list):
         for item in obj:
-            _walk(item, out, depth + 1)
+            _walk(item, out, texts, depth + 1)
         return
     for key, val in obj.items():
+        nkey = _norm_key(str(key))
         if isinstance(val, (dict, list)):
-            _walk(val, out, depth + 1)
+            _walk(val, out, texts, depth + 1)
         elif isinstance(val, str) and val:
-            if key in ID_KEYS and not out.get("id") and len(val) >= 8 and " " not in val:
+            if nkey in ID_KEYS and not out.get("id") and len(val) >= 8 and " " not in val:
                 out["id"] = val
-            elif key in IP_KEYS and not out.get("ip") and val.count(".") == 3:
+            elif nkey in IP_KEYS and not out.get("ip") and val.count(".") == 3:
                 out["ip"] = val
-            elif key in NAME_KEYS and not out.get("hostname"):
+            elif nkey in NAME_KEYS and not out.get("hostname"):
                 if val.count(".") == 3 and val.replace(".", "").isdigit():
                     out.setdefault("ip", val)
                 else:
                     out["hostname"] = val
+            elif len(val) > 15 and (" " in val):
+                texts.append(val)  # free-text candidate for the fallback scan
 
 
 def extract_device_ref(payload) -> dict:
     """Best-effort extraction of {id, hostname, ip} from any CC event payload."""
     out: dict = {}
+    texts: list = []
     if isinstance(payload, (dict, list)):
-        _walk(payload, out)
+        _walk(payload, out, texts)
+    # fallback: fish hostname/IP out of description-style free text
+    if not out.get("hostname") or not out.get("ip"):
+        for text in texts:
+            m = _IP_WITH_HOST.search(text)
+            if m:
+                out.setdefault("ip", m.group(1))
+                out.setdefault("hostname", m.group(2))
+                break
+            m = _IPV4.search(text)
+            if m:
+                out.setdefault("ip", m.group(1))
     return out
 
 

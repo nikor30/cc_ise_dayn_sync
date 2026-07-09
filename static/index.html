@@ -76,6 +76,13 @@
       <h3>Webhook</h3>
       <label>Listen path <input id="s-webhook.path" placeholder="/webhook/catalystcenter"></label>
       <label>Shared token (header <code>X-Auth-Token</code>) <input id="s-webhook.token" type="password"></label>
+      <label>Per-device update from webhook
+        <select id="s-webhook.update_mode">
+          <option value="overwrite">Overwrite — apply rule targets, even over existing non-default NDGs</option>
+          <option value="defaults-only">Defaults only — update only devices still on the default NDGs</option>
+          <option value="off">Off — never update per device (rely on reconciliation)</option>
+        </select>
+      </label>
       <label class="chk"><input id="s-webhook.trigger_reconcile" type="checkbox">
         Every valid webhook also triggers a reconciliation run (after the debounce delay) —
         useful when the CC payload contains no usable device reference</label>

@@ -5,7 +5,7 @@ import logging
 from .clients.catalyst import CatalystClient, CatalystError
 from .clients.ise import ISEClient, ISEError
 from . import audit, blacklist, rules
-from .settings_store import retry_schedule
+from .settings_store import get_setting, retry_schedule
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +84,12 @@ async def process_device_event(ref: dict, trigger: str = "webhook", raw=None,
     `retry_lookup=False` fails fast when the device is not in ISE (used by the
     GUI force-sync so the request returns immediately)."""
     label = ref.get("hostname") or ref.get("ip") or ref.get("id") or "?"
+    webhook_mode = get_setting("webhook.update_mode").strip().lower()
+    if trigger == "webhook" and webhook_mode == "off":
+        audit.record(trigger, "skipped", device_name=label,
+                     message="per-device webhook updates are disabled "
+                             "(webhook update mode: off)", raw=raw)
+        return {"status": "skipped", "message": "webhook updates disabled"}
     if blacklist.is_blacklisted(ref.get("hostname", ""), ref.get("ip", "")):
         audit.record(trigger, "skipped", device_name=ref.get("hostname", label),
                      device_ip=ref.get("ip", ""), message="device is blacklisted", raw=raw)
@@ -130,6 +136,14 @@ async def process_device_event(ref: dict, trigger: str = "webhook", raw=None,
                 audit.update_status(audit_id, "failed",
                                     "device never appeared in ISE within the retry window")
                 return {"status": "failed", "message": "device not found in ISE"}
+            if (trigger == "webhook" and webhook_mode == "defaults-only"
+                    and not rules.is_default_ndgs(
+                        list(ise_device.get("NetworkDeviceGroupList") or []))):
+                audit.update_status(audit_id, "skipped",
+                                    "device already has non-default NDGs "
+                                    "(webhook update mode: defaults-only)")
+                return {"status": "skipped",
+                        "message": "device has non-default NDGs (defaults-only mode)"}
             old_ndgs, new_ndgs = await apply_to_ise(ise, ise_device, targets)
     except ISEError as exc:
         audit.update_status(audit_id, "failed", f"ISE error: {exc}")
