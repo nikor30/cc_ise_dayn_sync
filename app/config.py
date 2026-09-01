@@ -7,7 +7,7 @@ Resolution order for every setting (12-factor friendly):
 """
 import os
 
-APP_VERSION = "1.6.1"
+APP_VERSION = "1.6.2"
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DB_PATH = os.path.join(DATA_DIR, "app.db")

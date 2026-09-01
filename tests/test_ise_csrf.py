@@ -112,5 +112,21 @@ def test_persistent_malformed_read_raises_iseerror(monkeypatch):
         asyncio.run(client._req("GET", f"{client.ers_base}/config/networkdevice"))
         assert False, "expected ISEError"
     except ISEError as exc:
-        assert "malformed" in str(exc)
+        assert "throttling" in str(exc)
+        assert "ERS Operator" not in str(exc)  # role hint is writes-only
     assert ise_mod._csrf_detected is False  # reads must not flip CSRF mode
+
+
+def test_write_failure_message_names_readonly_role(monkeypatch):
+    async def always_broken(client, method, url, retries=3, **kw):
+        raise httpx.RemoteProtocolError("illegal header line")
+
+    monkeypatch.setattr(ise_mod, "request_with_retry", always_broken)
+    client = ISEClient()
+    client.aclose = AsyncMock()
+    try:
+        asyncio.run(client._req("PUT", f"{client.ers_base}/config/networkdevice/x"))
+        assert False, "expected ISEError"
+    except ISEError as exc:
+        assert "ERS Operator" in str(exc)
+        assert "ERS Admin" in str(exc)

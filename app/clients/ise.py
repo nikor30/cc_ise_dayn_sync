@@ -127,9 +127,11 @@ class ISEClient:
                     self._csrf = None
                 await asyncio.sleep(_RETRY_PAUSE)
                 return await self._req(method, url, json_body, params, _retried=True)
-            raise ISEError("ISE sent a malformed HTTP response (CSRF check "
-                           "enabled or ERS throttling): "
-                           f"{exc}") from exc
+            hint = (" — most common cause: the API user only has the read-only "
+                    "'ERS Operator' role; writes require 'ERS Admin' "
+                    "(other causes: CSRF check, ERS throttling)"
+                    if is_write else " (ERS throttling)")
+            raise ISEError(f"ISE rejected the {method}{hint}: {exc}") from exc
         except httpx.HTTPError as exc:
             raise ISEError(f"ISE request failed: {exc.__class__.__name__}: {exc}") from exc
         if resp.status_code == 401 and is_write and not _retried:
