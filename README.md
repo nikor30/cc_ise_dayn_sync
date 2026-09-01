@@ -64,6 +64,9 @@ connection per run so large scans neither trip the throttle nor abort.
 2. **API user:** create an admin user with the **ERS Admin** role
    (or use OpenAPI on ISE 3.1+ and enable *Open API* in the same settings page —
    select the flavor in the GUI).
+   ⚠️ **Not "ERS Operator"** — that role is read-only: the connection test and
+   NDG refresh will work, but every device update will fail with ISE's
+   malformed `Unauthorized User: : 401` response.
 3. The ERS port (default **9060**) must be reachable from the container.
 
 ### Catalyst Center

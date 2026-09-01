@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.2 — 2026-07-09
+
+### Changed
+- Clearer diagnosis when ISE rejects a write with the malformed
+  `Unauthorized User: : 401` response: the error now names the most common
+  cause first — the API user only has the read-only **ERS Operator** role
+  (writes require **ERS Admin**) — before CSRF/throttling. README updated
+  with the same warning. (Field finding: reads succeed with ERS Operator,
+  so the connection test looks green while every update fails.)
+
 ## 1.6.1 — 2026-07-09
 
 ### Fixed
